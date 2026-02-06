@@ -1,0 +1,71 @@
+name: Nim Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [published]
+
+jobs:
+  test-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nim-version: ['2.0.x', 'stable']
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Nim
+      uses: jiro4989/setup-nim-action@v2
+      with:
+        nim-version: ${{ matrix.nim-version }}
+
+    - name: Install Dependencies
+      run: nimble install -y
+
+    - name: Run Tests
+      run: nimble test
+
+    - name: Run Tests with ARC
+      run: nimble test --mm:arc -y
+
+    - name: Build Example
+      run: nim cpp --path:. -o:example/undsrc example/undsrc.nim
+
+    - name: Test Example
+      run: |
+        ./example/undsrc tests/data/test.fastq.dsrc > /tmp/out.fq
+        test $(wc -l < /tmp/out.fq) -eq 16
+
+  test-macos:
+    if: github.event_name == 'release'
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        nim-version: ['stable']
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Nim
+      uses: jiro4989/setup-nim-action@v2
+      with:
+        nim-version: ${{ matrix.nim-version }}
+
+    - name: Install Dependencies
+      run: nimble install -y
+
+    - name: Run Tests
+      run: nimble test
+
+    - name: Run Tests with ARC
+      run: nimble test --mm:arc -y
+
+    - name: Build Example
+      run: nim cpp --path:. -o:example/undsrc example/undsrc.nim
+
+    - name: Test Example
+      run: |
+        ./example/undsrc tests/data/test.fastq.dsrc > /tmp/out.fq
+        test $(wc -l < /tmp/out.fq) -eq 16

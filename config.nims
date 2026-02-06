@@ -1,0 +1,6 @@
+switch("backend", "cpp")
+switch("passC", "-std=c++11")
+switch("passC", "-DNDEBUG")
+switch("passC", "-D_FILE_OFFSET_BITS=64")
+switch("passC", "-D_LARGEFILE64_SOURCE")
+switch("passL", "-lpthread")
