@@ -1,6 +1,8 @@
 # dsrclib
 
-Nim library for reading and writing [DSRC2](http://sun.aei.polsl.pl/dsrc) compressed FASTQ files.
+[![Nim Tests](https://github.com/quadram-institute-bioscience/dsrclib/actions/workflows/test.yml/badge.svg)](https://github.com/quadram-institute-bioscience/dsrclib/actions/workflows/test.yml)
+
+Nim library for reading [DSRC2](http://sun.aei.polsl.pl/dsrc) compressed FASTQ files.
 Returns [readfx](https://github.com/quadram-institute-bioscience/readfx)-compatible `FQRecord` objects.
 
 ## Installation
