@@ -60,4 +60,43 @@ assert lineCount == 16, "expected 16 lines in decompressed FASTQ, got " & $lineC
 removeFile(tmpOut)
 echo "OK: file-to-file decompression works"
 
+# Test 4: Record-by-record roundtrip via writeDSRC
+var original: seq[FQRecord]
+for rec in readDSRC(testFile):
+  original.add(rec)
+
+let tmpDsrc = getTempDir() / "dsrclib_roundtrip.dsrc"
+writeDSRC(tmpDsrc, original)
+
+var roundtripped: seq[FQRecord]
+for rec in readDSRC(tmpDsrc):
+  roundtripped.add(rec)
+
+assert roundtripped.len == original.len,
+  "roundtrip count: expected " & $original.len & ", got " & $roundtripped.len
+for i in 0 ..< original.len:
+  assert roundtripped[i].name == original[i].name,
+    "name mismatch at " & $i & ": '" & roundtripped[i].name & "' vs '" & original[i].name & "'"
+  assert roundtripped[i].comment == original[i].comment,
+    "comment mismatch at " & $i
+  assert roundtripped[i].sequence == original[i].sequence,
+    "sequence mismatch at " & $i
+  assert roundtripped[i].quality == original[i].quality,
+    "quality mismatch at " & $i
+removeFile(tmpDsrc)
+echo "OK: record-by-record roundtrip passed"
+
+# Test 5: File-to-file compression roundtrip via compressDSRC
+let tmpFq = getTempDir() / "dsrclib_compress_test.fastq"
+let tmpDsrc2 = getTempDir() / "dsrclib_compress_test.dsrc"
+decompressDSRC(testFile, tmpFq)
+compressDSRC(tmpFq, tmpDsrc2)
+var count2 = 0
+for rec in readDSRC(tmpDsrc2):
+  inc count2
+assert count2 == 4, "compress roundtrip: expected 4 records, got " & $count2
+removeFile(tmpFq)
+removeFile(tmpDsrc2)
+echo "OK: file-to-file compression roundtrip passed"
+
 echo "All tests passed!"

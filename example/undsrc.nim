@@ -1,43 +1,61 @@
 ## undsrc - Decompress DSRC files to FASTQ
 ##
 ## Usage: undsrc INPUT_FILE.dsrc > OUTPUT_FASTQ
+##        undsrc INPUT_FILE.dsrc OUTPUT_FASTQ
+##
+## Uses DsrcModule (multi-threaded) for fast decompression.
 
 import dsrclib
-import os
+import os, strutils
+
+proc usage() =
+  stderr.writeLine "Usage: undsrc [-t THREADS] INPUT_FILE.dsrc [OUTPUT_FASTQ]"
+  stderr.writeLine ""
+  stderr.writeLine "Decompresses a DSRC file to FASTQ."
+  stderr.writeLine "If OUTPUT_FASTQ is omitted, writes to stdout."
+  stderr.writeLine ""
+  stderr.writeLine "Options:"
+  stderr.writeLine "  -t THREADS  Number of threads (default: all available cores)"
+  quit(1)
 
 proc main() =
-  if paramCount() < 1:
-    stderr.writeLine "Usage: undsrc INPUT_FILE.dsrc > OUTPUT_FASTQ"
-    stderr.writeLine ""
-    stderr.writeLine "Decompresses a DSRC file and prints FASTQ to stdout."
-    stderr.writeLine "Stats are printed to stderr."
-    quit(1)
+  var threads: uint32 = 0
+  var args: seq[string]
 
-  let inputFile = paramStr(1)
+  var i = 1
+  while i <= paramCount():
+    let p = paramStr(i)
+    if p == "-t":
+      if i + 1 > paramCount():
+        stderr.writeLine "Error: -t requires an argument"
+        quit(1)
+      inc i
+      try:
+        threads = parseUInt(paramStr(i)).uint32
+      except ValueError:
+        stderr.writeLine "Error: invalid thread count: " & paramStr(i)
+        quit(1)
+    else:
+      args.add(p)
+    inc i
+
+  if args.len < 1:
+    usage()
+
+  let inputFile = args[0]
 
   if not fileExists(inputFile):
     stderr.writeLine "Error: file not found: " & inputFile
     quit(1)
 
-  var totalRecords = 0
-  var totalBases = 0
-
-  for rec in readDSRC(inputFile):
-    # Print FASTQ format to stdout
-    if rec.comment.len > 0:
-      stdout.writeLine "@", rec.name, " ", rec.comment
-    else:
-      stdout.writeLine "@", rec.name
-    stdout.writeLine rec.sequence
-    stdout.writeLine "+"
-    stdout.writeLine rec.quality
-
-    inc totalRecords
-    totalBases += rec.sequence.len
-
-  # Print stats to stderr
-  stderr.writeLine "Total records: ", totalRecords
-  stderr.writeLine "Total bases: ", totalBases
+  if args.len >= 2:
+    let outputFile = args[1]
+    if fileExists(outputFile):
+      stderr.writeLine "Error: output file already exists: " & outputFile
+      quit(1)
+    decompressDSRC(inputFile, outputFile, threads = threads)
+  else:
+    decompressDSRC(inputFile, "", threads = threads, useStdIo = true)
 
 when isMainModule:
   main()

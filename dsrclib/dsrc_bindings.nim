@@ -2,15 +2,23 @@
 ## This module provides {.importcpp.} and {.compile.} pragmas
 ## for the DSRC decompression API.
 
-import std/os
+import std/[os, strutils]
 
 const csrcDir = currentSourcePath().parentDir / "csrc"
 const srcDir = csrcDir / "src"
 const inclDir = csrcDir / "include"
+const bindingsDir = currentSourcePath().parentDir
 
 # Include paths
 {.passC: "-I" & inclDir.}
 {.passC: "-I" & srcDir.}
+
+# kseq C++ compatibility layer for readfx.
+# readfx's kseq.h uses KSEQ_INIT which generates C-only code.
+# We compile kseq as C separately and force-include a C++ compatible header.
+const readfxKlibParent = staticExec("nimble path readfx 2>/dev/null").splitLines()[0] / "readfx"
+{.compile(bindingsDir / "kseq_cpp.c", "-std=c11 -I" & readfxKlibParent).}
+{.passC: "-include " & bindingsDir / "kseq_cpp.h".}
 
 # Compile all 21 DSRC C++ source files
 const cflags = "-std=c++11 -O2 -DNDEBUG -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE"
@@ -39,7 +47,35 @@ const cflags = "-std=c++11 -O2 -DNDEBUG -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SO
 # Ensure std::string is available
 {.emit: """#include <string>""".}
 
-# Type bindings
+const kseqCppH = bindingsDir / "kseq_cpp.h"
+
+# kseq types (C++ compatible, matching readfx's kseq layout)
+type
+  KString* {.importc: "kstring_t", header: kseqCppH.} = object
+    l*: csize_t  ## Length of the string
+    m*: csize_t  ## Allocated capacity
+    s*: ptr char ## String data
+
+  KStream* {.importc: "kstream_t", header: kseqCppH.} = object
+
+  KSeq* {.importc: "kseq_t", header: kseqCppH.} = object
+    name*: KString
+    comment*: KString
+    sequence* {.importc: "seq".}: KString
+    qual*: KString
+    last_char*: cint
+    f*: ptr KStream
+
+proc kseqInit*(fp: pointer): ptr KSeq
+  {.importc: "kseq_init", header: kseqCppH.}
+
+proc kseqRead*(seq: ptr KSeq): cint
+  {.importc: "kseq_read", header: kseqCppH.}
+
+proc kseqDestroy*(seq: ptr KSeq)
+  {.importc: "kseq_destroy", header: kseqCppH.}
+
+# DSRC type bindings
 type
   DsrcArchive* {.importcpp: "dsrc::lib::DsrcArchive",
                  header: "dsrc/Dsrc.h".} = object
@@ -95,3 +131,72 @@ proc getQuality*(rec: CppFastqRecord): cstring
 
 proc getPlus*(rec: CppFastqRecord): cstring
   {.importcpp: "(char*)(#.plus.c_str())", header: "dsrc/Dsrc.h".}
+
+# DsrcArchive compression methods
+proc startCompress*(a: var DsrcArchive, filename: cstring)
+  {.importcpp: "#.StartCompress(std::string(#))", header: "dsrc/Dsrc.h".}
+  ## Opens a .dsrc2 file for compression.
+
+proc writeNextRecord*(a: var DsrcArchive, rec: CppFastqRecord)
+  {.importcpp: "#.WriteNextRecord(#)", header: "dsrc/Dsrc.h".}
+  ## Writes a FASTQ record to the compressed archive.
+
+proc finishCompress*(a: var DsrcArchive)
+  {.importcpp: "#.FinishCompress()", header: "dsrc/Dsrc.h".}
+  ## Finalizes compression and releases resources.
+
+# CppFastqRecord field setters (cstring -> std::string)
+proc setTag*(rec: var CppFastqRecord, val: cstring)
+  {.importcpp: "#.tag = std::string(#)".}
+
+proc setSequence*(rec: var CppFastqRecord, val: cstring)
+  {.importcpp: "#.sequence = std::string(#)".}
+
+proc setQuality*(rec: var CppFastqRecord, val: cstring)
+  {.importcpp: "#.quality = std::string(#)".}
+
+proc setPlus*(rec: var CppFastqRecord, val: cstring)
+  {.importcpp: "#.plus = std::string(#)".}
+
+# DsrcModule file-to-file compression
+proc compress*(m: var DsrcModule, inputFilename, outputFilename: cstring)
+  {.importcpp: "#.Compress(std::string(#), std::string(#))", header: "dsrc/Dsrc.h".}
+  ## Compress a FASTQ file to a .dsrc2 file (multi-threaded).
+
+# Configurable setters for DsrcArchive
+proc setQualityOffset*(c: var DsrcArchive, offset: uint32)
+  {.importcpp: "#.SetQualityOffset(#)", header: "dsrc/Dsrc.h".}
+
+proc setDnaCompressionLevel*(c: var DsrcArchive, level: uint32)
+  {.importcpp: "#.SetDnaCompressionLevel(#)", header: "dsrc/Dsrc.h".}
+
+proc setQualityCompressionLevel*(c: var DsrcArchive, level: uint32)
+  {.importcpp: "#.SetQualityCompressionLevel(#)", header: "dsrc/Dsrc.h".}
+
+proc setLossyCompression*(c: var DsrcArchive, lossy: bool)
+  {.importcpp: "#.SetLossyCompression(#)", header: "dsrc/Dsrc.h".}
+
+proc setFastqBufferSizeMB*(c: var DsrcArchive, size: uint64)
+  {.importcpp: "#.SetFastqBufferSizeMB(#)", header: "dsrc/Dsrc.h".}
+
+# Configurable setters for DsrcModule
+proc setQualityOffset*(c: var DsrcModule, offset: uint32)
+  {.importcpp: "#.SetQualityOffset(#)", header: "dsrc/Dsrc.h".}
+
+proc setDnaCompressionLevel*(c: var DsrcModule, level: uint32)
+  {.importcpp: "#.SetDnaCompressionLevel(#)", header: "dsrc/Dsrc.h".}
+
+proc setQualityCompressionLevel*(c: var DsrcModule, level: uint32)
+  {.importcpp: "#.SetQualityCompressionLevel(#)", header: "dsrc/Dsrc.h".}
+
+proc setLossyCompression*(c: var DsrcModule, lossy: bool)
+  {.importcpp: "#.SetLossyCompression(#)", header: "dsrc/Dsrc.h".}
+
+proc setFastqBufferSizeMB*(c: var DsrcModule, size: uint64)
+  {.importcpp: "#.SetFastqBufferSizeMB(#)", header: "dsrc/Dsrc.h".}
+
+proc setThreadsNumber*(c: var DsrcModule, threadNum: uint32)
+  {.importcpp: "#.SetThreadsNumber(#)", header: "dsrc/Dsrc.h".}
+
+proc setStdIoUsing*(c: var DsrcModule, use: bool)
+  {.importcpp: "#.SetStdIoUsing(#)", header: "dsrc/Dsrc.h".}
