@@ -21,7 +21,7 @@ const readfxKlibParent = staticExec("nimble path readfx 2>/dev/null").splitLines
 {.passC: "-include " & bindingsDir / "kseq_cpp.h".}
 
 # Compile all 21 DSRC C++ source files
-const cflags = "-std=c++11 -O2 -DNDEBUG -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE"
+const cflags = "-std=c++11 -O3 -march=native -flto -DNDEBUG -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE"
 {.compile(srcDir / "BlockCompressor.cpp", cflags).}
 {.compile(srcDir / "BlockCompressorExt.cpp", cflags).}
 {.compile(srcDir / "Configurable.cpp", cflags).}
