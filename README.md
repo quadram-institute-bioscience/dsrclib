@@ -1,4 +1,4 @@
-<img src="tests/assets/logo.svg" style="align:right">
+<img src="tests/assets/logo.svg" style="float: right; margin-left: 10px;">
 
 # dsrclib
 
