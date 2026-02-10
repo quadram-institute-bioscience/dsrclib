@@ -1,4 +1,4 @@
 | Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
 |:---|---:|---:|---:|---:|
-| `dsrc d -t1 /var/folders/qf/64kyljyn0njdfbz8nyrgjv8h000cb1/T/tmp.J1YUSqhKBF/test.dsrc /var/folders/qf/64kyljyn0njdfbz8nyrgjv8h000cb1/T/tmp.J1YUSqhKBF/out1.fastq` | 359.4 ± 2.6 | 356.2 | 362.7 | 1.00 |
-| `bin/undsrc -t 1 /var/folders/qf/64kyljyn0njdfbz8nyrgjv8h000cb1/T/tmp.J1YUSqhKBF/test.dsrc /var/folders/qf/64kyljyn0njdfbz8nyrgjv8h000cb1/T/tmp.J1YUSqhKBF/out2.fastq` | 378.5 ± 2.3 | 374.8 | 381.2 | 1.05 ± 0.01 |
+| `dsrc d -t1 /tmp/tmp.J4qwxvyCN2/test.dsrc /tmp/tmp.J4qwxvyCN2/out1.fastq` | 506.3 ± 36.6 | 472.5 | 560.6 | 1.12 ± 0.10 |
+| `bin/undsrc -t 1 /tmp/tmp.J4qwxvyCN2/test.dsrc /tmp/tmp.J4qwxvyCN2/out2.fastq` | 452.2 ± 21.8 | 435.1 | 495.5 | 1.00 |
