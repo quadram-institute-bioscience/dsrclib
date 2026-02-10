@@ -1,0 +1,3 @@
+command,mean,stddev,median,user,system,min,max
+dsrc c -t4 /var/folders/qf/64kyljyn0njdfbz8nyrgjv8h000cb1/T/tmp.lxWAKWWbSP/test.fastq /var/folders/qf/64kyljyn0njdfbz8nyrgjv8h000cb1/T/tmp.lxWAKWWbSP/test.dsrc1,0.1657457040275,0.0021325914084701354,0.16506358184000003,0.4970679175,0.022912322500000002,0.16337295634000001,0.17224866534000002
+bin/fastq2dsrc -t 4 /var/folders/qf/64kyljyn0njdfbz8nyrgjv8h000cb1/T/tmp.lxWAKWWbSP/test.fastq /var/folders/qf/64kyljyn0njdfbz8nyrgjv8h000cb1/T/tmp.lxWAKWWbSP/test.dsrc2,0.16907791784,0.002930967294337464,0.16874174884000004,0.47087510499999996,0.036833885,0.16440354034000002,0.17533228934000003
