@@ -1,3 +1,5 @@
+<img src="tests/assets/logo.svg" style="align:right">
+
 # dsrclib
 
 [![Nim Tests](https://github.com/quadram-institute-bioscience/dsrclib/actions/workflows/test.yml/badge.svg)](https://github.com/quadram-institute-bioscience/dsrclib/actions/workflows/test.yml)

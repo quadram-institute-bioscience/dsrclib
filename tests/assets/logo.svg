@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Top arrow pressing down -->
+  <path d="M 60,30 L 100,70 L 140,30"
+        fill="none" stroke="url(#grad)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Bottom arrow pressing up -->
+  <path d="M 60,170 L 100,130 L 140,170"
+        fill="none" stroke="url(#grad)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Compressed core: three tight horizontal bars -->
+  <line x1="78" y1="92"  x2="122" y2="92"  stroke="url(#grad)" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+  <line x1="82" y1="108" x2="118" y2="108" stroke="url(#grad)" stroke-width="7" stroke-linecap="round" opacity="0.6"/>
+  <line x1="75" y1="100" x2="125" y2="100" stroke="url(#grad)" stroke-width="8" stroke-linecap="round" opacity="1"/>
+</svg>
