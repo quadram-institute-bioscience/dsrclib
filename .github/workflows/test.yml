@@ -53,7 +53,7 @@ jobs:
     - name: Setup Nim
       uses: iffy/install-nim@v5
       with:
-        version: 'binary:stable'
+        version: 'binary:2.2.4'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
