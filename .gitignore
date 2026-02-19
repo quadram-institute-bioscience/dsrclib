@@ -1,1 +1,6 @@
 .DS_Store
+tests/test_pure_fastq_parser
+tests/test_oracle_harness
+tests/oracle/print_fixture_fingerprints
+tests/oracle/diff_fastq_logical
+bin/*
