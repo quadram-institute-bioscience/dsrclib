@@ -8,7 +8,6 @@ backend       = "cpp"
 srcDir        = "./"
 binDir        = "bin"
 bin           = @["undsrc", "fastq2dsrc"]
-paths         = @["."]
 
 # Dependencies
 requires "nim >= 2.0.0", "readfx >= 0.2.0"
