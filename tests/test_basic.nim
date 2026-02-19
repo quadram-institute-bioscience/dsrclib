@@ -99,4 +99,62 @@ removeFile(tmpFq)
 removeFile(tmpDsrc2)
 echo "OK: file-to-file compression roundtrip passed"
 
+# Test 6: feature-flagged pure-Nim decode path via readDSRC
+putEnv("DSRCLIB_FORCE_PURE_DECODE", "1")
+var countPureFlag = 0
+for rec in readDSRC(testFile):
+  assert rec.name.len > 0
+  assert rec.sequence.len == rec.quality.len
+  inc countPureFlag
+assert countPureFlag == 4, "pure decode feature flag: expected 4 records, got " & $countPureFlag
+delEnv("DSRCLIB_FORCE_PURE_DECODE")
+echo "OK: readDSRC feature flag uses pure-Nim decode path"
+
+# Test 7: runtime backend selector
+let hadBackend = existsEnv("DSRCLIB_BACKEND")
+let prevBackend = getEnv("DSRCLIB_BACKEND", "")
+
+putEnv("DSRCLIB_BACKEND", "pure")
+var countPureMode = 0
+for rec in readDSRC(testFile):
+  assert rec.sequence.len == rec.quality.len
+  inc countPureMode
+assert countPureMode == 4, "pure backend mode: expected 4 records, got " & $countPureMode
+
+when defined(dsrclibLegacy):
+  putEnv("DSRCLIB_BACKEND", "legacy")
+  var countLegacyMode = 0
+  for rec in readDSRC(testFile):
+    assert rec.sequence.len == rec.quality.len
+    inc countLegacyMode
+  assert countLegacyMode == 4, "legacy backend mode: expected 4 records, got " & $countLegacyMode
+  echo "OK: DSRCLIB_BACKEND runtime selector supports pure and legacy modes"
+else:
+  putEnv("DSRCLIB_BACKEND", "legacy")
+  var raisedLegacy = false
+  try:
+    for _ in readDSRC(testFile):
+      discard
+  except IOError:
+    raisedLegacy = true
+  assert raisedLegacy, "build without -d:dsrclibLegacy should reject DSRCLIB_BACKEND=legacy"
+
+  # Backend selector must take precedence over legacy/pure force flags.
+  putEnv("DSRCLIB_FORCE_PURE_DECODE", "1")
+  raisedLegacy = false
+  try:
+    for _ in readDSRC(testFile):
+      discard
+  except IOError:
+    raisedLegacy = true
+  assert raisedLegacy, "DSRCLIB_BACKEND=legacy should override FORCE_PURE_DECODE when legacy backend is unavailable"
+  delEnv("DSRCLIB_FORCE_PURE_DECODE")
+
+  echo "OK: build without -d:dsrclibLegacy rejects legacy runtime backend mode"
+
+if hadBackend:
+  putEnv("DSRCLIB_BACKEND", prevBackend)
+else:
+  delEnv("DSRCLIB_BACKEND")
+
 echo "All tests passed!"

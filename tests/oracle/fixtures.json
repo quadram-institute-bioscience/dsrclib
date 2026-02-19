@@ -1,0 +1,31 @@
+{
+  "fixtures": [
+    {
+      "id": "tiny_test",
+      "description": "Small canonical DSRC/FASTQ pair used by unit tests",
+      "fastqPath": "tests/data/test.fastq.gz",
+      "dsrcPath": "tests/data/test.fastq.dsrc",
+      "expectedRecords": 4,
+      "expectedFingerprint": "7143f668f6431066",
+      "crossCompat": true
+    },
+    {
+      "id": "medium_16s",
+      "description": "Medium real-world amplicon dataset",
+      "fastqPath": "tests/data/16S_R1.fq.gz",
+      "dsrcPath": "tests/data/16S_R1.fq.dsrc",
+      "expectedRecords": 6137,
+      "expectedFingerprint": "5ff1400310305e2c",
+      "crossCompat": false
+    },
+    {
+      "id": "edge_synthetic",
+      "description": "Synthetic FASTQ edge cases (IUPAC, separators, plus repetition)",
+      "fastqPath": "tests/oracle/fixtures/edge_cases.fastq",
+      "dsrcPath": "",
+      "expectedRecords": 3,
+      "expectedFingerprint": "dc5e8477366836e7",
+      "crossCompat": true
+    }
+  ]
+}
