@@ -39,27 +39,6 @@ proc toNimString(ks: KString): string =
   result = newString(ks.l.int)
   copyMem(addr result[0], ks.s, ks.l.int)
 
-proc cloneStringValue(s: string): string =
-  if s.len == 0:
-    return ""
-  result = newString(s.len)
-  copyMem(addr result[0], unsafeAddr s[0], s.len)
-
-proc cloneBytes(data: seq[uint8]): seq[uint8] =
-  if data.len == 0:
-    return @[]
-  result = newSeq[uint8](data.len)
-  copyMem(addr result[0], unsafeAddr data[0], data.len)
-
-proc clonePureRecords(records: seq[pure.PureFastqRecord]): seq[pure.PureFastqRecord] =
-  result = newSeq[pure.PureFastqRecord](records.len)
-  for i in 0 ..< records.len:
-    result[i].title = cloneStringValue(records[i].title)
-    result[i].sequence = cloneStringValue(records[i].sequence)
-    result[i].plus = cloneStringValue(records[i].plus)
-    result[i].quality = cloneStringValue(records[i].quality)
-    result[i].truncatedLen = records[i].truncatedLen
-
 # zlib procs for readFastq (readfx links -lz but doesn't export these).
 # Use header to avoid conflicting forward declarations with zlib.h.
 # gzFile is gzFile_s* in zlib; C++ requires explicit casts from void*.
@@ -220,7 +199,8 @@ when compileOption("threads"):
     datasetType: pure.FastqDatasetType;
     compSettings: pure.CompressionSettings
   ): seq[uint8] {.gcsafe.} =
-    pure.encodeChunkRecords(records, datasetType, compSettings)
+    var work = records
+    pure.encodeChunkRecordsInPlace(work, datasetType, compSettings)
 
   proc decodeChunkTask(
     chunk: seq[uint8];
@@ -314,10 +294,9 @@ when compileOption("threads"):
 
     var chunk: seq[uint8]
     while reader.readNextChunk(chunk):
-      let chunkCopy = cloneBytes(chunk)
       pending.addLast(
         spawn decodeChunkTask(
-          chunkCopy,
+          chunk,
           reader.footer.datasetType,
           reader.footer.compSettings,
           verifyChecksums
@@ -476,7 +455,7 @@ proc compressDSRCPure*(
       writer = pure.openDsrcContainerWriter(outputPath, dsType, settings)
       writerOpen = true
 
-    let chunk = pure.encodeChunkRecords(chunkRecords, dsType, settings)
+    let chunk = pure.encodeChunkRecordsInPlace(chunkRecords, dsType, settings)
     writer.writeChunk(chunk)
     chunkRecords.setLen(0)
     chunkBytes = 0
@@ -496,10 +475,10 @@ proc compressDSRCPure*(
         writer = pure.openDsrcContainerWriter(outputPath, dsType, settings)
         writerOpen = true
 
-      let batchCopy = clonePureRecords(chunkRecords)
-      chunkRecords.setLen(0)
+      var batch = move(chunkRecords)
+      chunkRecords = @[]
       chunkBytes = 0
-      pending.addLast(spawn encodeChunkTask(batchCopy, dsType, settings))
+      pending.addLast(spawn encodeChunkTask(batch, dsType, settings))
       if pending.len >= maxPending:
         drainOneEncode()
 

@@ -802,8 +802,8 @@ proc encodeDna(
   else:
     raise newException(DsrcFormatError, "DNA order-N supports at most 8 symbols")
 
-proc encodeChunkRecords*(
-  records: openArray[PureFastqRecord];
+proc encodeChunkRecordsInPlace*(
+  records: var seq[PureFastqRecord];
   datasetType: FastqDatasetType;
   compSettings: CompressionSettings
 ): seq[uint8] =
@@ -820,7 +820,6 @@ proc encodeChunkRecords*(
   if compSettings.qualityOrder > 2'u32 and not compSettings.lossy:
     raise newException(DsrcFormatError, "Lossless quality order supports only 1 or 2")
 
-  var work = @records
   var checksum = FastqChecksum()
   var dnaStats = DnaStats()
   var qualityStats = QualityStats()
@@ -832,7 +831,7 @@ proc encodeChunkRecords*(
       colorSpace = datasetType.colorSpace
     )
     rp.initializeStats()
-    checksum = rp.processForward(work, cFlags)
+    checksum = rp.processForward(records, cFlags)
     rp.finalizeStats()
     dnaStats = rp.base.dnaStats
     qualityStats = rp.base.qualityStats
@@ -842,13 +841,13 @@ proc encodeChunkRecords*(
       colorSpace = datasetType.colorSpace
     )
     rp.initializeStats()
-    checksum = rp.processForward(work, cFlags)
+    checksum = rp.processForward(records, cFlags)
     rp.finalizeStats()
     dnaStats = rp.dnaStats
     qualityStats = rp.qualityStats
 
   var header = ChunkHeaderMeta()
-  header.recordsCount = uint32(work.len)
+  header.recordsCount = uint32(records.len)
   header.chunkSize = computeChunkSize(records, datasetType.plusRepetition)
   header.flags = 0'u32
   header.minQuaLength = qualityStats.minLength
@@ -858,7 +857,7 @@ proc encodeChunkRecords*(
   header.checksum = checksum
   header.checksumFlags = cFlags
 
-  let useRawTags = compSettings.debugControlChecks or chooseRawTagCoding(work)
+  let useRawTags = compSettings.debugControlChecks or chooseRawTagCoding(records)
   if useRawTags:
     header.flags = header.flags or FlagMixedFieldFormatting
 
@@ -868,12 +867,20 @@ proc encodeChunkRecords*(
   writeMetaData(writer, header, datasetType, compSettings)
   writeControlCheck(writer, controlChecks)
   if useRawTags:
-    encodeTagRawAndLengths(writer, work, header.minQuaLength, header.maxQuaLength)
+    encodeTagRawAndLengths(writer, records, header.minQuaLength, header.maxQuaLength)
   else:
-    encodeTagTokenizerAndLengths(writer, work, header.minQuaLength, header.maxQuaLength)
+    encodeTagTokenizerAndLengths(writer, records, header.minQuaLength, header.maxQuaLength)
   writeControlCheck(writer, controlChecks)
-  encodeQuality(writer, work, qualityStats, header.minQuaLength, header.maxQuaLength, compSettings)
+  encodeQuality(writer, records, qualityStats, header.minQuaLength, header.maxQuaLength, compSettings)
   writeControlCheck(writer, controlChecks)
-  encodeDna(writer, work, dnaStats, compSettings)
+  encodeDna(writer, records, dnaStats, compSettings)
   writeControlCheck(writer, controlChecks)
   writer.data
+
+proc encodeChunkRecords*(
+  records: openArray[PureFastqRecord];
+  datasetType: FastqDatasetType;
+  compSettings: CompressionSettings
+): seq[uint8] =
+  var work = @records
+  encodeChunkRecordsInPlace(work, datasetType, compSettings)
