@@ -41,9 +41,64 @@ jobs:
         ./example/undsrc tests/data/test.fastq.dsrc > /tmp/out.fq
         test $(wc -l < /tmp/out.fq) -eq 16
 
+  test-linux-pure-default:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Nim
+      uses: iffy/install-nim@v5
+      with:
+        version: 'binary:stable'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install Dependencies
+      run: nimble install -y
+
+    - name: Install dsrc
+      run: |
+        wget -q https://github.com/refresh-bio/DSRC/releases/download/v2.0.2/dsrc-linux-x64-static.tar.gz
+        tar xzf dsrc-linux-x64-static.tar.gz
+        sudo mv bin/dsrc /usr/local/bin/
+
+    - name: Run Pure-Default API Tests
+      run: |
+        nim cpp --path:. -r tests/test_basic.nim
+        nim cpp --path:. -r tests/test_pure_block_encoder.nim
+        nim cpp --path:. -r tests/test_pure_block_decoder.nim
+        nim cpp --path:. -r tests/test_pure_encode_modes.nim
+
+    - name: Run Pure-Default Oracle Harness (Strict)
+      env:
+        DSRCLIB_DSRC_CMD: /usr/local/bin/dsrc
+        DSRCLIB_ORACLE_REQUIRE_CLI: "1"
+        DSRCLIB_ORACLE_REQUIRE_PURE_ST_OPERATOR: "1"
+        DSRCLIB_ORACLE_REQUIRE_PURE_MT_OPERATOR: "1"
+        DSRCLIB_ORACLE_REQUIRE_PURE_MT_STRESS: "1"
+        DSRCLIB_ORACLE_MT_STRESS_REPEAT: "2"
+      run: |
+        nim cpp --path:. --threads:on -r tests/test_oracle_harness.nim
+
+    - name: Run Pure-Default API Tests with ARC
+      run: |
+        nim cpp --path:. --mm:arc -r tests/test_basic.nim
+
+    - name: Build Example (Pure-Default)
+      run: nim cpp --path:. -o:example/undsrc_pure example/undsrc.nim
+
+    - name: Test Example (Pure-Default)
+      run: |
+        ./example/undsrc_pure tests/data/test.fastq.dsrc > /tmp/out_pure.fq
+        test $(wc -l < /tmp/out_pure.fq) -eq 16
+
+    - name: Legacy Backend Opt-In Build Check
+      run: |
+        nim cpp --path:. -d:dsrclibLegacy -r tests/test_basic.nim
+
   benchmark:
     if: github.event_name == 'push'
-    needs: test-linux
+    needs: [test-linux, test-linux-pure-default]
     runs-on: ubuntu-latest
     permissions:
       contents: write
