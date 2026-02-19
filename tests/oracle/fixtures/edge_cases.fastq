@@ -1,0 +1,12 @@
+@EDGE1 run:1 lane:2 tile:1101 x:100 y:200
+ACGTNRYKMSWBDHV
++EDGE1 run:1 lane:2 tile:1101 x:100 y:200
+IIIIIIIIIIIIIII
+@EDGE2 no_comment
+NNNNRYKMBDHV
++EDGE2 no_comment
+!!!!####$$$$
+@EDGE3 comment.with_separators-/_:=,.
+AGCTAGCTAG
++EDGE3 comment.with_separators-/_:=,.
+JJJJJJJJJJ
