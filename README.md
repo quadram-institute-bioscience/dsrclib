@@ -79,4 +79,7 @@ The `example/` directory contains two command-line tools:
 
 ## License
 
-GPL-2.0 (DSRC2 is GPL-2.0 licensed)
+GPL-2.0 
+
+(C) Quadram Institute Bioscience
+
