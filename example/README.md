@@ -1,14 +1,36 @@
-# undsrc.nim
+# Examples
 
-`undsrc` is a demo binary that uses dsrclib to deflate a 
-dsrc compressed fastq file.
+## `undsrc.nim`
 
-Usage:
+Decompress DSRC to FASTQ (pure backend by default):
+
+```bash
+undsrc [options] INPUT_FILE.dsrc [OUTPUT_FASTQ]
 ```
-undsrc  INPUT_FILE.dsrc > OUTPUT_FASTQ
+
+Common options:
+
+- `-t THREADS` set worker threads for operator path
+- `--backend pure|auto|legacy` select runtime backend
+- `--iterator` use `readDSRCPure` iterator path
+
+## `fastq2dsrc.nim`
+
+Compress FASTQ to DSRC (pure encoder by default):
+
+```bash
+fastq2dsrc [options] INPUT_FASTQ OUTPUT_DSRC
+cat reads.fq | fastq2dsrc [options] - OUTPUT_DSRC
 ```
 
-* Will print to STDOUT the decompressed file
-* Will print to STDERR (at the end) the total number of records printed and the total number of bases printed
+Pure-mode options:
 
+- `--lossy`
+- `--dna-order N`
+- `--quality-order N`
+- `--chunk-bytes N`
+- `--crc32`
+- `--debug-control-checks`
+
+Legacy backend is available only when compiled with `-d:dsrclibLegacy`.
 
