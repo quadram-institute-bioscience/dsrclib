@@ -3,30 +3,30 @@
 ============================================================
 
   Compression, single thread
-    dsrc (C++):  677.1 ms  ± 2.6 ms
-    Nim wrapper: 1650.6 ms  ± 7.6 ms
-    → Nim is 2.44x slower (+144% overhead)
+    dsrc (C++):  670.5 ms  ± 10.1 ms
+    Nim wrapper: 1625.2 ms  ± 11.8 ms
+    → Nim is 2.42x slower (+142% overhead)
 
   Compression, 4 threads
-    dsrc (C++):  310.2 ms  ± 3.4 ms
-    Nim wrapper: 664.7 ms  ± 2.1 ms
-    → Nim is 2.14x slower (+114% overhead)
+    dsrc (C++):  308.8 ms  ± 1.9 ms
+    Nim wrapper: 685.5 ms  ± 10.1 ms
+    → Nim is 2.22x slower (+122% overhead)
 
   Decompression, single thread
-    dsrc (C++):  491.6 ms  ± 1.4 ms
-    Nim wrapper: 823.2 ms  ± 4.6 ms
-    → Nim is 1.67x slower (+67% overhead)
+    dsrc (C++):  490.9 ms  ± 0.6 ms
+    Nim wrapper: 720.8 ms  ± 5.4 ms
+    → Nim is 1.47x slower (+47% overhead)
 
   Decompression, 4 threads
-    dsrc (C++):  188.1 ms  ± 3.8 ms
-    Nim wrapper: 447.0 ms  ± 2.5 ms
-    → Nim is 2.38x slower (+138% overhead)
+    dsrc (C++):  188.5 ms  ± 5.9 ms
+    Nim wrapper: 370.2 ms  ± 4.1 ms
+    → Nim is 1.96x slower (+96% overhead)
 
 ------------------------------------------------------------
   Overall verdict
 ------------------------------------------------------------
-  Average across 4 cases: Nim is 2.16x vs C++
-  Mean overhead: +116%
+  Average across 4 cases: Nim is 2.02x vs C++
+  Mean overhead: +102%
 
   The Nim wrapper is noticeably slower than the C++ dsrc tool.
 
