@@ -820,6 +820,9 @@ proc encodeChunkRecordsInPlace*(
   if compSettings.qualityOrder > 2'u32 and not compSettings.lossy:
     raise newException(DsrcFormatError, "Lossless quality order supports only 1 or 2")
 
+  # Chunk size must reflect original FASTQ payload, before forward transforms.
+  let originalChunkSize = computeChunkSize(records, datasetType.plusRepetition)
+
   var checksum = FastqChecksum()
   var dnaStats = DnaStats()
   var qualityStats = QualityStats()
@@ -848,7 +851,7 @@ proc encodeChunkRecordsInPlace*(
 
   var header = ChunkHeaderMeta()
   header.recordsCount = uint32(records.len)
-  header.chunkSize = computeChunkSize(records, datasetType.plusRepetition)
+  header.chunkSize = originalChunkSize
   header.flags = 0'u32
   header.minQuaLength = qualityStats.minLength
   header.maxQuaLength = qualityStats.maxLength

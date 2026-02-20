@@ -100,6 +100,42 @@ proc splitTag(tag: string): tuple[name: string, comment: string] =
   else:
     result = (t[0 ..< spacePos], t[spacePos + 1 .. ^1])
 
+const FastqWriteBufferFlushBytes = 1 shl 20
+
+proc appendSlice(buf: var string; s: string; first, last: int) =
+  if first < 0 or last < first or first >= s.len:
+    return
+  let hi = min(last, s.high)
+  let n = hi - first + 1
+  let oldLen = buf.len
+  buf.setLen(oldLen + n)
+  copyMem(addr buf[oldLen], unsafeAddr s[first], n)
+
+proc appendNormalizedTag(buf: var string; tag: string) =
+  var start = 0
+  if tag.len > 0 and tag[0] == '@':
+    start = 1
+
+  let spacePos = tag.find(' ', start)
+  buf.add('@')
+
+  if spacePos == -1:
+    appendSlice(buf, tag, start, tag.high)
+    return
+
+  appendSlice(buf, tag, start, spacePos - 1)
+  if spacePos < tag.high:
+    buf.add(' ')
+    appendSlice(buf, tag, spacePos + 1, tag.high)
+
+proc appendPureFastqRecord(buf: var string; rec: pure.PureFastqRecord) =
+  appendNormalizedTag(buf, rec.title)
+  buf.add('\n')
+  buf.add(rec.sequence)
+  buf.add("\n+\n")
+  buf.add(rec.quality)
+  buf.add('\n')
+
 proc envEnabled(name: string): bool =
   getEnv(name, "0") == "1"
 
@@ -173,19 +209,6 @@ proc usePureMtOperator(threads: uint32): bool =
       )
   else:
     return false
-
-proc writePureFastqRecord(outFile: File; rec: pure.PureFastqRecord) =
-  let (name, comment) = splitTag(rec.title)
-  outFile.write("@")
-  outFile.write(name)
-  if comment.len > 0:
-    outFile.write(" ")
-    outFile.write(comment)
-  outFile.write("\n")
-  outFile.write(rec.sequence)
-  outFile.write("\n+\n")
-  outFile.write(rec.quality)
-  outFile.write("\n")
 
 when compileOption("threads"):
   proc configureThreadPool(workers: int) =
@@ -266,8 +289,14 @@ iterator readDSRCPure*(path: string): FQRecord =
 
 proc writeFastqFromPure(inputPath: string; outFile: File) =
   ## Materialize a DSRC archive to FASTQ via the pure-Nim decoder.
+  var outBuf = newStringOfCap(FastqWriteBufferFlushBytes)
   for rec in pure.readDsrcPure(inputPath):
-    writePureFastqRecord(outFile, rec)
+    appendPureFastqRecord(outBuf, rec)
+    if outBuf.len >= FastqWriteBufferFlushBytes:
+      outFile.write(outBuf)
+      outBuf.setLen(0)
+  if outBuf.len > 0:
+    outFile.write(outBuf)
 
 when compileOption("threads"):
   proc writeFastqFromPureMt(
@@ -289,8 +318,11 @@ when compileOption("threads"):
     var pending = initDeque[FlowVar[seq[pure.PureFastqRecord]]]()
     proc drainOneDecode() =
       let decoded = ^pending.popFirst()
+      var outBuf = newStringOfCap(FastqWriteBufferFlushBytes)
       for rec in decoded:
-        writePureFastqRecord(outFile, rec)
+        appendPureFastqRecord(outBuf, rec)
+      if outBuf.len > 0:
+        outFile.write(outBuf)
 
     var chunk: seq[uint8]
     while reader.readNextChunk(chunk):
@@ -355,9 +387,15 @@ proc makeTag(rec: FQRecord): string =
   ## Reconstruct the DSRC tag field from an FQRecord.
   ## DSRC's tag = "@name comment" (with @ prefix).
   if rec.comment.len > 0:
-    "@" & rec.name & " " & rec.comment
+    result = newStringOfCap(rec.name.len + rec.comment.len + 2)
+    result.add('@')
+    result.add(rec.name)
+    result.add(' ')
+    result.add(rec.comment)
   else:
-    "@" & rec.name
+    result = newStringOfCap(rec.name.len + 1)
+    result.add('@')
+    result.add(rec.name)
 
 proc toPureRecord(rec: FQRecord): pure.PureFastqRecord =
   pure.PureFastqRecord(
@@ -476,7 +514,7 @@ proc compressDSRCPure*(
         writerOpen = true
 
       var batch = move(chunkRecords)
-      chunkRecords = @[]
+      chunkRecords = newSeqOfCap[pure.PureFastqRecord](batch.len)
       chunkBytes = 0
       pending.addLast(spawn encodeChunkTask(batch, dsType, settings))
       if pending.len >= maxPending:
