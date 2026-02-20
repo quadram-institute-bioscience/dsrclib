@@ -1,4 +1,4 @@
 | Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
 |:---|---:|---:|---:|---:|
-| `dsrc d -t1 /tmp/tmp.qEMXOH3EIv/test.dsrc /tmp/tmp.qEMXOH3EIv/out1.fastq` | 490.9 ± 0.6 | 490.0 | 492.0 | 1.00 |
-| `bin/undsrc -t 1 /tmp/tmp.qEMXOH3EIv/test.dsrc /tmp/tmp.qEMXOH3EIv/out2.fastq` | 720.8 ± 5.4 | 715.2 | 732.3 | 1.47 ± 0.01 |
+| `dsrc d -t1 /tmp/tmp.aptoAzzQ3q/test.dsrc /tmp/tmp.aptoAzzQ3q/out1.fastq` | 494.8 ± 2.2 | 493.0 | 500.9 | 1.00 |
+| `bin/undsrc -t 1 /tmp/tmp.aptoAzzQ3q/test.dsrc /tmp/tmp.aptoAzzQ3q/out2.fastq` | 739.5 ± 2.8 | 736.4 | 745.8 | 1.49 ± 0.01 |
