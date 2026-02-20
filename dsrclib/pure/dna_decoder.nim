@@ -1,7 +1,6 @@
 ## DNA stream decode side for pure-Nim DSRC block decoding (PN-008 decode path).
 
-import std/tables
-import types, bitstream, chunk_decoder, huffman_decoder, range_decoder
+import types, bitstream, chunk_decoder, huffman_decoder, range_decoder, adaptive_model_map
 
 const
   DnaSchemeNone = 255'u8
@@ -69,14 +68,15 @@ proc decodeOrderN(
   doAssert hashBits < 63
   let hashMask = (1'u64 shl hashBits) - 1'u64
 
-  var model = initTable[uint64, AdaptiveSymbolCoder]()
+  let capHint = 1 shl min(max(hashBits div 2, 10), 16)
+  var model = initAdaptiveSymbolCoderMap(capHint, symbolCount, 2'u16)
   var decoder = RangeDecoder()
   decoder.start(reader)
 
   var hash = 0'u64
   for i in 0 ..< state.records.len:
     for j in 0 ..< state.records[i].sequence.len:
-      let sym = model.mgetOrPut(hash, initAdaptiveSymbolCoder(symbolCount, 2'u16)).decodeSymbol(decoder, reader)
+      let sym = model.getOrInit(hash).decodeSymbol(decoder, reader)
       doAssert sym < uint32(symbolCount)
       state.records[i].sequence[j] = char(uint8(sym))
 

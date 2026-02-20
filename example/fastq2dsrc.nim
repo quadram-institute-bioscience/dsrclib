@@ -55,7 +55,7 @@ proc usage() =
   stderr.writeLine "  --lossy               Pure mode: enable lossy quality compression"
   stderr.writeLine "  --dna-order N         Pure mode: DNA model order (default: 0)"
   stderr.writeLine "  --quality-order N     Pure mode: quality model order (default: 0)"
-  stderr.writeLine "  --chunk-bytes N       Pure mode: target chunk bytes (default: 1048576)"
+  stderr.writeLine "  --chunk-bytes N       Pure mode: target chunk bytes (default: 4194304)"
   stderr.writeLine "  --crc32               Pure mode: include per-chunk CRC32"
   stderr.writeLine "  --debug-control-checks  Pure mode: emit debug control markers"
   stderr.writeLine "  -h, --help            Show this help"
@@ -67,7 +67,7 @@ proc main() =
   var lossy = false
   var dnaOrder: uint32 = 0
   var qualityOrder: uint32 = 0
-  var targetChunkBytes = 1 shl 20
+  var targetChunkBytes = 1 shl 22
   var calculateCrc32 = false
   var debugControlChecks = false
   var args: seq[string]
@@ -144,7 +144,7 @@ proc main() =
 
   let hasPureSpecificTuning =
     lossy or dnaOrder > 0'u32 or qualityOrder > 0'u32 or
-    targetChunkBytes != (1 shl 20) or calculateCrc32 or debugControlChecks
+    targetChunkBytes != (1 shl 22) or calculateCrc32 or debugControlChecks
 
   try:
     if backend == "pure":

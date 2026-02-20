@@ -1,4 +1,4 @@
-import os
+import std/[os, times]
 import dsrclib/pure
 
 proc main() =
@@ -29,7 +29,8 @@ proc main() =
   echo "OK: parsed DSRC container metadata and read ", chunks.len, " chunks"
 
   # Raw container rewrite smoke-test (no recompression, just chunk framing).
-  let tmpOut = getTempDir() / "dsrclib_pure_container_copy.dsrc"
+  let tmpSuffix = $getCurrentProcessId() & "_" & $int(epochTime() * 1_000_000.0)
+  let tmpOut = getTempDir() / ("dsrclib_pure_container_copy_" & tmpSuffix & ".dsrc")
   var w = openDsrcContainerWriter(tmpOut, r.footer.datasetType, r.footer.compSettings)
   for c in chunks:
     w.writeChunk(c)

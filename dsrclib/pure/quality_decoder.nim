@@ -1,7 +1,6 @@
 ## Quality stream decode side for pure-Nim DSRC block decoding (PN-009 decode path).
 
-import std/tables
-import bitstream, chunk_decoder, huffman_decoder, range_decoder, types
+import bitstream, chunk_decoder, huffman_decoder, range_decoder, types, adaptive_model_map
 
 const
   QualitySchemeNone = 255'u8
@@ -299,13 +298,13 @@ proc decodeRle(
 proc decodeExtOrderSymbol(
   reader: var BitMemoryReader;
   decoder: var RangeDecoder;
-  model: var Table[uint64, AdaptiveSymbolCoder];
+  model: var AdaptiveSymbolCoderMap;
   hashState: var QualityHashState;
   ctx0: uint32;
   symbolCount: int
 ): uint32 =
   let key = (hashState.getHash() shl hashState.alphabetBits) or uint64(ctx0)
-  result = model.mgetOrPut(key, initAdaptiveSymbolCoder(symbolCount, 2'u16)).decodeSymbol(decoder, reader)
+  result = model.getOrInit(key).decodeSymbol(decoder, reader)
   doAssert result < uint32(symbolCount)
   hashState.updateHash(result)
 
@@ -314,7 +313,9 @@ proc decodeLossyOrder(reader: var BitMemoryReader; state: var ChunkDecodeState) 
   doAssert order > 0
 
   var hashState = initQualityHashState(order, 8)
-  var model = initTable[uint64, AdaptiveSymbolCoder]()
+  let keyBits = order * hashState.alphabetBits + hashState.alphabetBits
+  let capHint = 1 shl min(max(keyBits div 2, 10), 16)
+  var model = initAdaptiveSymbolCoderMap(capHint, 8, 2'u16)
   var decoder = RangeDecoder()
   decoder.start(reader)
 
@@ -383,7 +384,9 @@ proc decodeLosslessOrder(reader: var BitMemoryReader; state: var ChunkDecodeStat
   doAssert symbols.len > 0 and symbols.len <= cfg.symbolCount
 
   var hashState = initQualityHashState(cfg.symbolOrder, cfg.symbolCount)
-  var model = initTable[uint64, AdaptiveSymbolCoder]()
+  let keyBits = cfg.symbolOrder * hashState.alphabetBits + hashState.alphabetBits
+  let capHint = 1 shl min(max(keyBits div 2, 10), 16)
+  var model = initAdaptiveSymbolCoderMap(capHint, cfg.symbolCount, 2'u16)
   var decoder = RangeDecoder()
   decoder.start(reader)
 

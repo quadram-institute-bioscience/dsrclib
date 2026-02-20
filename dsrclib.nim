@@ -454,7 +454,7 @@ proc compressDSRCPure*(
   lossy = false;
   dnaOrder: uint32 = 0;
   qualityOrder: uint32 = 0;
-  targetChunkBytes = 1 shl 20;
+  targetChunkBytes = 1 shl 22;
   workers = 1;
   debugControlChecks = false
 ) =

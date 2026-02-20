@@ -4,8 +4,7 @@
 ## - non-default tag preserve flags are intentionally unsupported
 ## - supports lossless/lossy, order-0/order-N DNA, quality normal/order modelers
 
-import std/[tables]
-import types, bitstream, chunk_decoder, records_processor, huffman_encoder, range_decoder
+import types, bitstream, chunk_decoder, records_processor, huffman_encoder, range_decoder, adaptive_model_map
 
 const
   TagRawMaxSymbolCount = 128
@@ -577,7 +576,9 @@ proc selectLosslessOrderScheme(stats: QualityStats; order: int): uint8 =
 
 proc encodeLossyOrder(writer: var BitMemoryWriter; records: openArray[PureFastqRecord]; order: int) =
   var hashState = initQualityHashState(order, 8)
-  var model = initTable[uint64, AdaptiveSymbolCoder]()
+  let keyBits = order * hashState.alphabetBits + hashState.alphabetBits
+  let capHint = 1 shl min(max(keyBits div 2, 10), 16)
+  var model = initAdaptiveSymbolCoderMap(capHint, 8, 2'u16)
   var encoder = RangeEncoder()
   encoder.start()
 
@@ -592,7 +593,7 @@ proc encodeLossyOrder(writer: var BitMemoryWriter; records: openArray[PureFastqR
       doAssert q <= 7'u32
 
       let key = (hashState.getHash() shl hashState.alphabetBits) or uint64(pctx)
-      model.mgetOrPut(key, initAdaptiveSymbolCoder(8, 2'u16)).encodeSymbol(encoder, writer, q)
+      model.getOrInit(key).encodeSymbol(encoder, writer, q)
       hashState.updateHash(q)
 
   encoder.finish(writer)
@@ -631,7 +632,9 @@ proc encodeLosslessOrder(
   writer.flushPartialWordBuffer()
 
   var hashState = initQualityHashState(cfg.symbolOrder, cfg.symbolCount)
-  var model = initTable[uint64, AdaptiveSymbolCoder]()
+  let keyBits = cfg.symbolOrder * hashState.alphabetBits + hashState.alphabetBits
+  let capHint = 1 shl min(max(keyBits div 2, 10), 16)
+  var model = initAdaptiveSymbolCoderMap(capHint, cfg.symbolCount, 2'u16)
   var encoder = RangeEncoder()
   encoder.start()
 
@@ -645,7 +648,7 @@ proc encodeLosslessOrder(
       let idx = uint32(symToIdx[ord(rec.quality[j])])
 
       let key = (hashState.getHash() shl hashState.alphabetBits) or uint64(pctx)
-      model.mgetOrPut(key, initAdaptiveSymbolCoder(cfg.symbolCount, 2'u16)).encodeSymbol(encoder, writer, idx)
+      model.getOrInit(key).encodeSymbol(encoder, writer, idx)
       hashState.updateHash(idx)
 
   encoder.finish(writer)
@@ -755,7 +758,8 @@ proc encodeDnaOrderN(
   doAssert hashBits < 63
   let hashMask = (1'u64 shl hashBits) - 1'u64
 
-  var model = initTable[uint64, AdaptiveSymbolCoder]()
+  let capHint = 1 shl min(max(hashBits div 2, 10), 16)
+  var model = initAdaptiveSymbolCoderMap(capHint, symbolCount, 2'u16)
   var encoder = RangeEncoder()
   encoder.start()
 
@@ -764,7 +768,7 @@ proc encodeDnaOrderN(
     for ch in rec.sequence:
       let sym = uint32(ord(ch))
       doAssert sym < uint32(symbolCount)
-      model.mgetOrPut(hash, initAdaptiveSymbolCoder(symbolCount, 2'u16)).encodeSymbol(encoder, writer, sym)
+      model.getOrInit(hash).encodeSymbol(encoder, writer, sym)
 
       hash = hash shl alphabetBits
       hash = hash or uint64(sym)

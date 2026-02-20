@@ -1,14 +1,22 @@
 NIM ?= nim
 NIMFLAGS = -d:danger --gc:arc --opt:speed --path:. --passC:-march=native
+TEST_NIMCACHE ?= .nimcache
 BINDIR = bin
 EXAMPLES = fastq2dsrc undsrc
+DSRC_CMD ?= $(shell \
+	if command -v dsrc >/dev/null 2>&1; then \
+		command -v dsrc; \
+	elif command -v micromamba >/dev/null 2>&1; then \
+		echo "micromamba run -n base dsrc"; \
+	fi)
 
 TARGETS = $(addprefix $(BINDIR)/, $(EXAMPLES))
+TEST_SOURCES = $(sort $(wildcard tests/test_*.nim))
 
 INPUT_GZ =  tests/data/large.fastq.gz
 BENCHDIR = benchmark
 
-.PHONY: all clean bench
+.PHONY: all clean bench test
 
 all: $(TARGETS)
 
@@ -73,5 +81,57 @@ bench: $(TARGETS)
 	@echo "=== Analysing results ==="
 	python3 $(BENCHDIR)/bench_summary.py
 
+test:
+	@echo "=== Core test suite (default mm) ==="
+	@for t in $(TEST_SOURCES); do \
+		if [ "$$t" = "tests/test_oracle_harness.nim" ]; then \
+			echo ">>> $$t (oracle CLI auto-probe disabled)"; \
+			DSRCLIB_DSRC_CMD=__skip_dsrc__ \
+			$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/default --threads:on -r $$t; \
+		else \
+			echo ">>> $$t"; \
+			$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/default -r $$t; \
+		fi; \
+	done
+	@echo ""
+	@echo "=== Core test suite (ARC mm) ==="
+	@for t in $(TEST_SOURCES); do \
+		if [ "$$t" = "tests/test_oracle_harness.nim" ]; then \
+			echo ">>> $$t (oracle CLI auto-probe disabled)"; \
+			DSRCLIB_DSRC_CMD=__skip_dsrc__ \
+			$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/arc --mm:arc --threads:on -r $$t; \
+		else \
+			echo ">>> $$t"; \
+			$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/arc --mm:arc -r $$t; \
+		fi; \
+	done
+	@echo ""
+	@echo "=== Example build + smoke test (default) ==="
+	$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/example-default -o:example/undsrc example/undsrc.nim
+	./example/undsrc tests/data/test.fastq.dsrc > /tmp/out.fq
+	test $$(wc -l < /tmp/out.fq) -eq 16
+	@echo ""
+	@echo "=== Pure-default oracle harness (strict) ==="
+	@if [ -z "$(DSRC_CMD)" ]; then \
+		echo "Error: dsrc CLI not found. Install dsrc or run with DSRC_CMD=/path/to/dsrc (or DSRC_CMD='micromamba run -n base dsrc')"; \
+		exit 1; \
+	fi
+	DSRCLIB_DSRC_CMD="$(DSRC_CMD)" \
+	DSRCLIB_ORACLE_REQUIRE_CLI=1 \
+	DSRCLIB_ORACLE_REQUIRE_PURE_ST_OPERATOR=1 \
+	DSRCLIB_ORACLE_REQUIRE_PURE_MT_OPERATOR=1 \
+	DSRCLIB_ORACLE_REQUIRE_PURE_MT_STRESS=1 \
+	DSRCLIB_ORACLE_MT_STRESS_REPEAT=2 \
+	$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/oracle-strict --threads:on -r tests/test_oracle_harness.nim
+	@echo ""
+	@echo "=== Example build + smoke test (pure-default) ==="
+	$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/example-pure -o:example/undsrc_pure example/undsrc.nim
+	./example/undsrc_pure tests/data/test.fastq.dsrc > /tmp/out_pure.fq
+	test $$(wc -l < /tmp/out_pure.fq) -eq 16
+	@echo ""
+	@echo "=== Legacy backend opt-in build check ==="
+	$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/legacy-check -d:dsrclibLegacy -r tests/test_basic.nim
+
 clean:
 	rm -rf $(BINDIR)
+	bash tests/clean.sh
