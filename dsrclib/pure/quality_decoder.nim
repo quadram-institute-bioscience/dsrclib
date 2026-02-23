@@ -50,14 +50,14 @@ proc bitLength32(x: uint32): uint32 =
     inc result
     t = t shr 1
 
-proc bitMask64(bits: int): uint64 =
+proc bitMask64(bits: int): uint64 {.inline.} =
   if bits <= 0:
     return 0'u64
   if bits >= 64:
     return uint64.high
   (1'u64 shl bits) - 1'u64
 
-proc intLog2Pow2(x: int): int =
+proc intLog2Pow2(x: int): int {.inline.} =
   doAssert x > 0
   var v = x
   while (v and 1) == 0:
@@ -78,10 +78,10 @@ proc initQualityHashState(symbolOrder: int; symbolCount: int): QualityHashState 
   result.symbolSwapMask = bitMask64(result.bitsLo) or (not bitMask64(result.bitsHi))
   result.symbolHashMask = bitMask64(symbolOrder * result.alphabetBits)
 
-proc getHash(state: QualityHashState): uint64 =
+proc getHash(state: QualityHashState): uint64 {.inline.} =
   state.hash and state.symbolHashMask
 
-proc updateHash(state: var QualityHashState; sym: uint32) =
+proc updateHash(state: var QualityHashState; sym: uint32) {.inline.} =
   state.hash = state.hash shl state.alphabetBits
 
   let nextBuf = (state.hash shr state.bitsLo) and state.symbolMask
@@ -99,7 +99,7 @@ proc readPositionContext(reader: var BitMemoryReader): PositionModelContext =
   result.maxLength = reader.getWord()
   doAssert result.maxLength > 0'u32
 
-  result.symbols = @[]
+  result.symbols = newSeqOfCap[uint8](QualityMaxSymbolCount)
   for i in 0 ..< QualityMaxSymbolCount:
     if reader.getBit() != 0'u32:
       result.symbols.add(uint8(i))
@@ -116,8 +116,8 @@ proc decodePositionalPlain(
 ) =
   var ctx = readPositionContext(reader)
 
-  for i in 0 ..< state.records.len:
-    let qLen = state.records[i].quality.len
+  for rec in mitems(state.records):
+    let qLen = rec.quality.len
     doAssert qLen <= int(ctx.maxLength)
 
     var nCount = 0
@@ -125,14 +125,14 @@ proc decodePositionalPlain(
       let idx = ctx.positionContexts[j].decodeSymbol(reader)
       doAssert idx >= 0 and idx < int32(ctx.symbols.len)
       let q = ctx.symbols[idx.int]
-      state.records[i].quality[j] = char(q)
+      rec.quality[j] = char(q)
 
       if quantizedValues:
         nCount += int(q == 0'u8)
       else:
         nCount += int(q >= QualityHashThreshold)
 
-    state.records[i].sequence.setLen(qLen - nCount)
+    rec.sequence.setLen(qLen - nCount)
 
   reader.flushInputWordBuffer()
 
@@ -146,8 +146,8 @@ proc decodePositionalTruncated(
   let variableLength = reader.getBit() != 0'u32
   let hashSymbol = if quantizedValues: char(HashSymbolQuantized) else: char(HashSymbolNormal)
 
-  for i in 0 ..< state.records.len:
-    let qLen = uint32(state.records[i].quality.len)
+  for rec in mitems(state.records):
+    let qLen = uint32(rec.quality.len)
     var thLen = qLen
 
     if reader.getBit() != 0'u32:
@@ -163,22 +163,22 @@ proc decodePositionalTruncated(
       let idx = ctx.positionContexts[j].decodeSymbol(reader)
       doAssert idx >= 0 and idx < int32(ctx.symbols.len)
       let q = ctx.symbols[idx.int]
-      state.records[i].quality[j] = char(q)
+      rec.quality[j] = char(q)
       if quantizedValues:
         nCount += int(q == 0'u8)
       else:
         nCount += int(q >= QualityHashThreshold)
 
     for j in int(thLen) ..< int(qLen):
-      state.records[i].quality[j] = hashSymbol
+      rec.quality[j] = hashSymbol
 
-    state.records[i].sequence.setLen(int(qLen) - nCount)
+    rec.sequence.setLen(int(qLen) - nCount)
 
   reader.flushInputWordBuffer()
 
 proc readRleSymbols(reader: var BitMemoryReader; ctx: var RleContext) =
-  ctx.qSymbols = @[]
-  ctx.lSymbols = @[]
+  ctx.qSymbols = newSeqOfCap[uint8](QualityMaxSymbolCount)
+  ctx.lSymbols = newSeqOfCap[uint8](QualityMaxLengthSymbols)
 
   for i in 0 ..< QualityMaxSymbolCount:
     if reader.getBit() != 0'u32:
@@ -259,8 +259,8 @@ proc decodeRleRecords(
   var curQua = 0'u8
   var curIdx = 0
 
-  for i in 0 ..< state.records.len:
-    let qLen = state.records[i].quality.len
+  for rec in mitems(state.records):
+    let qLen = rec.quality.len
     var nCount = 0
 
     for j in 0 ..< qLen:
@@ -270,7 +270,7 @@ proc decodeRleRecords(
         curLen = uint32(ctx.lRun[curIdx]) + 1'u32
         inc curIdx
 
-      state.records[i].quality[j] = char(curQua)
+      rec.quality[j] = char(curQua)
       dec curLen
 
       if quantizedValues:
@@ -278,7 +278,7 @@ proc decodeRleRecords(
       else:
         nCount += int(curQua >= QualityHashThreshold)
 
-    state.records[i].sequence.setLen(qLen - nCount)
+    rec.sequence.setLen(qLen - nCount)
 
 proc decodeRle(
   reader: var BitMemoryReader;
@@ -302,7 +302,7 @@ proc decodeExtOrderSymbol(
   hashState: var QualityHashState;
   ctx0: uint32;
   symbolCount: int
-): uint32 =
+): uint32 {.inline.} =
   let key = (hashState.getHash() shl hashState.alphabetBits) or uint64(ctx0)
   result = model.getOrInit(key).decodeSymbol(decoder, reader)
   doAssert result < uint32(symbolCount)
@@ -319,19 +319,25 @@ proc decodeLossyOrder(reader: var BitMemoryReader; state: var ChunkDecodeState) 
   var decoder = RangeDecoder()
   decoder.start(reader)
 
-  for i in 0 ..< state.records.len:
-    let qLen = state.records[i].quality.len
+  for rec in mitems(state.records):
+    let qLen = rec.quality.len
     if qLen == 0:
-      state.records[i].sequence.setLen(0)
+      rec.sequence.setLen(0)
       continue
 
     var nCount = 0
+    var pctx = 0'u32
+    var ctxRem = 0
     for j in 0 ..< qLen:
-      let pctx = uint32((j * 8) div qLen)
       let q = decodeExtOrderSymbol(reader, decoder, model, hashState, pctx, 8)
-      state.records[i].quality[j] = char(uint8(q))
+      rec.quality[j] = char(uint8(q))
       nCount += int(q == 0'u32)
-    state.records[i].sequence.setLen(qLen - nCount)
+      ctxRem += 8
+      if ctxRem >= qLen:
+        let step = ctxRem div qLen
+        pctx += uint32(step)
+        ctxRem -= step * qLen
+    rec.sequence.setLen(qLen - nCount)
 
   decoder.finish()
 
@@ -367,7 +373,7 @@ proc getLosslessOrderCfg(order: int; scheme: uint8): OrderLosslessCfg =
 
 proc readTranslationalSymbols(reader: var BitMemoryReader): seq[uint8] =
   reader.flushInputWordBuffer()
-  result = @[]
+  result = newSeqOfCap[uint8](QualityMaxSymbolCount)
   for i in 0 ..< QualityMaxSymbolCount:
     if reader.getBit() != 0'u32:
       result.add(uint8(i))
@@ -390,21 +396,27 @@ proc decodeLosslessOrder(reader: var BitMemoryReader; state: var ChunkDecodeStat
   var decoder = RangeDecoder()
   decoder.start(reader)
 
-  for i in 0 ..< state.records.len:
-    let qLen = state.records[i].quality.len
+  for rec in mitems(state.records):
+    let qLen = rec.quality.len
     if qLen == 0:
-      state.records[i].sequence.setLen(0)
+      rec.sequence.setLen(0)
       continue
 
     var nCount = 0
+    var pctx = 0'u32
+    var ctxRem = 0
     for j in 0 ..< qLen:
-      let pctx = uint32((j * cfg.symbolRescale) div qLen)
       let c = decodeExtOrderSymbol(reader, decoder, model, hashState, pctx, cfg.symbolCount)
       doAssert c < uint32(symbols.len)
       let q = symbols[c.int]
-      state.records[i].quality[j] = char(q)
+      rec.quality[j] = char(q)
       nCount += int(q >= QualityHashThreshold)
-    state.records[i].sequence.setLen(qLen - nCount)
+      ctxRem += cfg.symbolRescale
+      if ctxRem >= qLen:
+        let step = ctxRem div qLen
+        pctx += uint32(step)
+        ctxRem -= step * qLen
+    rec.sequence.setLen(qLen - nCount)
 
   decoder.finish()
 

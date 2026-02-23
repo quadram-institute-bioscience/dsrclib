@@ -20,6 +20,7 @@ type
   AdaptiveSymbolCoder* = object
     stats: seq[uint16]
     stepSize: uint16
+    total: uint32
     maxAccumulatedValue: uint32
 
 proc initAdaptiveSymbolCoder*(
@@ -31,11 +32,13 @@ proc initAdaptiveSymbolCoder*(
   for i in 0 ..< symbolCount:
     result.stats[i] = 1'u16
   result.stepSize = stepSize
+  result.total = uint32(symbolCount)
   result.maxAccumulatedValue = (1'u32 shl 16) - uint32(symbolCount) * uint32(stepSize)
 
 proc clear*(coder: var AdaptiveSymbolCoder) =
   for i in 0 ..< coder.stats.len:
     coder.stats[i] = 1'u16
+  coder.total = uint32(coder.stats.len)
 
 proc symbolCount*(coder: AdaptiveSymbolCoder): int =
   coder.stats.len
@@ -108,19 +111,17 @@ proc finish*(decoder: var RangeDecoder) =
   discard decoder
 
 proc rescale(coder: var AdaptiveSymbolCoder) =
+  var total = 0'u32
   for i in 0 ..< coder.stats.len:
-    coder.stats[i] = coder.stats[i] - (coder.stats[i] shr 1)
+    let v = coder.stats[i] - (coder.stats[i] shr 1)
+    coder.stats[i] = v
+    total += uint32(v)
+  coder.total = total
 
 proc accumulate(coder: var AdaptiveSymbolCoder): uint32 =
-  result = 0'u32
-  for i in 0 ..< coder.stats.len:
-    result += uint32(coder.stats[i])
-
-  if result >= coder.maxAccumulatedValue:
+  if coder.total >= coder.maxAccumulatedValue:
     coder.rescale()
-    result = 0'u32
-    for i in 0 ..< coder.stats.len:
-      result += uint32(coder.stats[i])
+  coder.total
 
 proc decodeSymbol*(
   coder: var AdaptiveSymbolCoder;
@@ -142,6 +143,7 @@ proc decodeSymbol*(
   let lowEnd = hiEnd - uint32(coder.stats[idx])
   decoder.updateFrequency(reader, uint32(coder.stats[idx]), lowEnd)
   coder.stats[idx] = coder.stats[idx] + coder.stepSize
+  coder.total += uint32(coder.stepSize)
   uint32(idx)
 
 proc encodeSymbol*(
@@ -159,3 +161,4 @@ proc encodeSymbol*(
 
   encoder.encodeFrequency(writer, uint32(coder.stats[sym]), lowEnd, acc)
   coder.stats[sym.int] = coder.stats[sym.int] + coder.stepSize
+  coder.total += uint32(coder.stepSize)

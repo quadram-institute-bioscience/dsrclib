@@ -52,14 +52,14 @@ proc bitLength(x: uint32): uint32 =
     inc result
     t = t shr 1
 
-proc bitMask64(bits: int): uint64 =
+proc bitMask64(bits: int): uint64 {.inline.} =
   if bits <= 0:
     return 0'u64
   if bits >= 64:
     return uint64.high
   (1'u64 shl bits) - 1'u64
 
-proc intLog2Pow2(x: int): int =
+proc intLog2Pow2(x: int): int {.inline.} =
   doAssert x > 0
   var v = x
   while (v and 1) == 0:
@@ -80,10 +80,10 @@ proc initQualityHashState(symbolOrder: int; symbolCount: int): QualityHashState 
   result.symbolSwapMask = bitMask64(result.bitsLo) or (not bitMask64(result.bitsHi))
   result.symbolHashMask = bitMask64(symbolOrder * result.alphabetBits)
 
-proc getHash(state: QualityHashState): uint64 =
+proc getHash(state: QualityHashState): uint64 {.inline.} =
   state.hash and state.symbolHashMask
 
-proc updateHash(state: var QualityHashState; sym: uint32) =
+proc updateHash(state: var QualityHashState; sym: uint32) {.inline.} =
   state.hash = state.hash shl state.alphabetBits
 
   let nextBuf = (state.hash shr state.bitsLo) and state.symbolMask
@@ -587,14 +587,21 @@ proc encodeLossyOrder(writer: var BitMemoryWriter; records: openArray[PureFastqR
     if qLen == 0:
       continue
 
+    let q = rec.quality
+    var pctx = 0'u32
+    var ctxRem = 0
     for j in 0 ..< qLen:
-      let pctx = uint32((j * 8) div qLen)
-      let q = uint32(ord(rec.quality[j]))
-      doAssert q <= 7'u32
+      let sym = uint32(ord(q[j]))
+      doAssert sym <= 7'u32
 
       let key = (hashState.getHash() shl hashState.alphabetBits) or uint64(pctx)
-      model.getOrInit(key).encodeSymbol(encoder, writer, q)
-      hashState.updateHash(q)
+      model.getOrInit(key).encodeSymbol(encoder, writer, sym)
+      hashState.updateHash(sym)
+      ctxRem += 8
+      if ctxRem >= qLen:
+        let step = ctxRem div qLen
+        pctx += uint32(step)
+        ctxRem -= step * qLen
 
   encoder.finish(writer)
 
@@ -643,13 +650,20 @@ proc encodeLosslessOrder(
     if qLen == 0:
       continue
 
+    let q = rec.quality
+    var pctx = 0'u32
+    var ctxRem = 0
     for j in 0 ..< qLen:
-      let pctx = uint32((j * cfg.symbolRescale) div qLen)
-      let idx = uint32(symToIdx[ord(rec.quality[j])])
+      let idx = uint32(symToIdx[ord(q[j])])
 
       let key = (hashState.getHash() shl hashState.alphabetBits) or uint64(pctx)
       model.getOrInit(key).encodeSymbol(encoder, writer, idx)
       hashState.updateHash(idx)
+      ctxRem += cfg.symbolRescale
+      if ctxRem >= qLen:
+        let step = ctxRem div qLen
+        pctx += uint32(step)
+        ctxRem -= step * qLen
 
   encoder.finish(writer)
 

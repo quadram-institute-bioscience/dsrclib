@@ -15,13 +15,17 @@ proc verifyChecksum(
 
 proc applyPlusLine(rec: var PureFastqRecord; plusRepetition: bool) =
   if plusRepetition:
-    if rec.title.len > 0 and rec.title[0] == '@':
-      if rec.title.len > 1:
-        rec.plus = "+" & rec.title[1 .. ^1]
-      else:
-        rec.plus = "+"
-    else:
-      rec.plus = "+" & rec.title
+    if rec.title.len == 0:
+      rec.plus = "+"
+      return
+
+    let hasAt = rec.title[0] == '@'
+    let srcStart = if hasAt: min(1, rec.title.len) else: 0
+    let payloadLen = rec.title.len - srcStart
+    rec.plus = newString(payloadLen + 1)
+    rec.plus[0] = '+'
+    if payloadLen > 0:
+      copyMem(addr rec.plus[1], unsafeAddr rec.title[srcStart], payloadLen)
   else:
     rec.plus = "+"
 
@@ -57,8 +61,8 @@ proc postprocessRecords(state: var ChunkDecodeState; verifyChecksums: bool) =
     if verifyChecksums and state.compSettings.calculateCrc32:
       verifyChecksum(state.header.checksum, checksum, state.header.checksumFlags)
 
-  for i in 0 ..< state.records.len:
-    state.records[i].applyPlusLine(state.datasetType.plusRepetition)
+  for rec in mitems(state.records):
+    rec.applyPlusLine(state.datasetType.plusRepetition)
 
 proc decodeChunkRecords*(
   chunk: openArray[uint8];

@@ -11,9 +11,9 @@ const
   DnaMaxSymbolCount = 20
 
 proc decodeOrder0B2(reader: var BitMemoryReader; state: var ChunkDecodeState) =
-  for i in 0 ..< state.records.len:
-    for j in 0 ..< state.records[i].sequence.len:
-      state.records[i].sequence[j] = char(uint8(reader.get2Bits()))
+  for rec in mitems(state.records):
+    for j in 0 ..< rec.sequence.len:
+      rec.sequence[j] = char(uint8(reader.get2Bits()))
   reader.flushInputWordBuffer()
 
 proc decodeOrder0Huffman(reader: var BitMemoryReader; state: var ChunkDecodeState) =
@@ -31,11 +31,11 @@ proc decodeOrder0Huffman(reader: var BitMemoryReader; state: var ChunkDecodeStat
   var dec = HuffmanDecoder()
   dec.loadTree(reader)
 
-  for i in 0 ..< state.records.len:
-    for j in 0 ..< state.records[i].sequence.len:
+  for rec in mitems(state.records):
+    for j in 0 ..< rec.sequence.len:
       let sidx = dec.decodeSymbol(reader)
       doAssert sidx >= 0 and sidx < int32(symbolCount)
-      state.records[i].sequence[j] = char(symbols[sidx.int])
+      rec.sequence[j] = char(symbols[sidx.int])
 
   reader.flushInputWordBuffer()
 
@@ -74,11 +74,11 @@ proc decodeOrderN(
   decoder.start(reader)
 
   var hash = 0'u64
-  for i in 0 ..< state.records.len:
-    for j in 0 ..< state.records[i].sequence.len:
+  for rec in mitems(state.records):
+    for j in 0 ..< rec.sequence.len:
       let sym = model.getOrInit(hash).decodeSymbol(decoder, reader)
       doAssert sym < uint32(symbolCount)
-      state.records[i].sequence[j] = char(uint8(sym))
+      rec.sequence[j] = char(uint8(sym))
 
       hash = hash shl alphabetBits
       hash = hash or uint64(sym)

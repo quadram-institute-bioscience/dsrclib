@@ -9,6 +9,7 @@ type
     occupied: seq[uint8]
     coders: seq[AdaptiveSymbolCoder]
     count: int
+    growAt: int
     symbolCount: int
     stepSize: uint16
 
@@ -40,6 +41,7 @@ proc initAdaptiveSymbolCoderMap*(
   result.occupied = newSeq[uint8](cap)
   result.coders = newSeq[AdaptiveSymbolCoder](cap)
   result.count = 0
+  result.growAt = (cap * 7) div 10
   result.symbolCount = symbolCount
   result.stepSize = stepSize
 
@@ -52,6 +54,7 @@ proc rehash(m: var AdaptiveSymbolCoderMap; newCap: int) =
   m.occupied = newSeq[uint8](newCap)
   m.coders = newSeq[AdaptiveSymbolCoder](newCap)
   m.count = 0
+  m.growAt = (newCap * 7) div 10
 
   let mask = uint64(newCap - 1)
   for i in 0 ..< oldKeys.len:
@@ -66,25 +69,24 @@ proc rehash(m: var AdaptiveSymbolCoderMap; newCap: int) =
     m.coders[idx] = oldCoders[i]
     inc m.count
 
-proc ensureCapacity(m: var AdaptiveSymbolCoderMap) =
-  # Resize at ~70% load factor.
-  if m.count * 10 < m.keys.len * 7:
-    return
-  m.rehash(m.keys.len shl 1)
-
 proc getOrInit*(
   m: var AdaptiveSymbolCoderMap;
   key: uint64
-): var AdaptiveSymbolCoder =
+): var AdaptiveSymbolCoder {.inline.} =
   doAssert m.keys.len > 0
-  m.ensureCapacity()
-
-  let cap = m.keys.len
-  let mask = uint64(cap - 1)
+  var cap = m.keys.len
+  var mask = uint64(cap - 1)
   var idx = int(mix64(key) and mask)
 
   while true:
     if m.occupied[idx] == 0'u8:
+      # Grow only when we are actually inserting a new key.
+      if m.count >= m.growAt:
+        m.rehash(cap shl 1)
+        cap = m.keys.len
+        mask = uint64(cap - 1)
+        idx = int(mix64(key) and mask)
+        continue
       m.occupied[idx] = 1'u8
       m.keys[idx] = key
       m.coders[idx] = initAdaptiveSymbolCoder(m.symbolCount, m.stepSize)

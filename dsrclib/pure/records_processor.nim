@@ -32,6 +32,18 @@ type
     qualityToIndexTable: array[64, uint8]
     qualityFromIndexTable: array[8, uint8]
 
+proc cloneString(s: string): string {.inline.} =
+  result = newString(s.len)
+  if s.len > 0:
+    copyMem(addr result[0], unsafeAddr s[0], s.len)
+
+proc prependCharInPlace(s: var string; ch: char) {.inline.} =
+  let oldLen = s.len
+  s.setLen(oldLen + 1)
+  if oldLen > 0:
+    moveMem(addr s[1], addr s[0], oldLen)
+  s[0] = ch
+
 proc initFastqChecksumHasher(): FastqChecksumHasher =
   result.flags = ChecksumCalcNone
   for i in 0 ..< result.hashers.len:
@@ -151,17 +163,8 @@ proc processRecordToColorSpace(
   quaStart: uint8
 ) =
   if useConstDelta:
-    var seq2 = newString(rec.sequence.len + 1)
-    seq2[0] = char(seqStart)
-    for i in 0 ..< rec.sequence.len:
-      seq2[i + 1] = rec.sequence[i]
-    rec.sequence = seq2
-
-    var qua2 = newString(rec.quality.len + 1)
-    qua2[0] = char(quaStart)
-    for i in 0 ..< rec.quality.len:
-      qua2[i + 1] = rec.quality[i]
-    rec.quality = qua2
+    rec.sequence.prependCharInPlace(char(seqStart))
+    rec.quality.prependCharInPlace(char(quaStart))
   elif rec.sequence.len > 0 and rec.quality.len > 0:
     rec.sequence[0] = char(seqStart)
     rec.quality[0] = char(quaStart)
@@ -206,12 +209,12 @@ proc processForwardRecord(p: var LosslessRecordsProcessor; rec: var PureFastqRec
   if p.colorSpace:
     p.processFromColorSpace(rec)
 
-  var seqOut = newStringOfCap(rec.sequence.len)
-  var qualOut = newString(rec.quality.len)
+  let qLen = rec.quality.len
+  var seqWrite = 0
   var prevQSymbol = 255
   var curQThLen = 0'u32
 
-  for i in 0 ..< rec.sequence.len:
+  for i in 0 ..< qLen:
     let seqOrd = ord(rec.sequence[i])
     doAssert seqOrd >= 0 and seqOrd < p.dnaToIndexTable.len
     let seqVal = p.dnaToIndexTable[seqOrd]
@@ -224,11 +227,12 @@ proc processForwardRecord(p: var LosslessRecordsProcessor; rec: var PureFastqRec
     if seqVal > 3'u8 and qval < 7:
       qval += int(128'u32 + (((uint32(seqVal) - 3'u32 + 1'u32) shl 3) - 16'u32))
     else:
-      seqOut.add(char(seqVal))
+      rec.sequence[seqWrite] = char(seqVal)
+      inc seqWrite
       p.dnaStats.symbolFreqs[int(seqVal)] += 1'u32
 
     doAssert qval >= 0 and qval <= 255
-    qualOut[i] = char(uint8(qval))
+    rec.quality[i] = char(uint8(qval))
     p.qualityStats.symbolFreqs[qval] += 1'u32
 
     if qval != prevQSymbol:
@@ -237,25 +241,30 @@ proc processForwardRecord(p: var LosslessRecordsProcessor; rec: var PureFastqRec
       curQThLen = uint32(i)
     prevQSymbol = qval
 
-  rec.sequence = seqOut
-  rec.quality = qualOut
-  rec.truncatedLen = uint16(curQThLen + (if rec.quality.len > 0: 1'u32 else: 0'u32))
+  rec.sequence.setLen(seqWrite)
+  rec.truncatedLen = uint16(curQThLen + (if qLen > 0: 1'u32 else: 0'u32))
 
   if prevQSymbol == int(HashSymbolNormal) and p.qualityStats.rleLength > 0'u32:
     p.qualityStats.rleLength -= 1'u32
 
-  p.qualityStats.rawLength += uint32(rec.quality.len)
+  p.qualityStats.rawLength += uint32(qLen)
   p.qualityStats.thLength += curQThLen
-  if uint32(rec.quality.len) < p.qualityStats.minLength:
-    p.qualityStats.minLength = uint32(rec.quality.len)
-  if uint32(rec.quality.len) > p.qualityStats.maxLength:
-    p.qualityStats.maxLength = uint32(rec.quality.len)
+  if uint32(qLen) < p.qualityStats.minLength:
+    p.qualityStats.minLength = uint32(qLen)
+  if uint32(qLen) > p.qualityStats.maxLength:
+    p.qualityStats.maxLength = uint32(qLen)
 
 proc processBackwardRecord(p: var LosslessRecordsProcessor; rec: var PureFastqRecord) =
   let qLen = rec.quality.len
-  var outSeq = newString(qLen)
-  var outQua = newString(qLen)
-  var seqi = rec.sequence.len - 1
+  var needsSeqCopy = false
+  for i in 0 ..< qLen:
+    if ord(rec.quality[i]) >= 128:
+      needsSeqCopy = true
+      break
+
+  var packedSeq = if needsSeqCopy: cloneString(rec.sequence) else: rec.sequence
+  var seqi = packedSeq.len - 1
+  rec.sequence.setLen(qLen)
 
   if qLen > 0:
     for i in countdown(qLen - 1, 0):
@@ -268,15 +277,12 @@ proc processBackwardRecord(p: var LosslessRecordsProcessor; rec: var PureFastqRe
         qval = qval and 7
       else:
         doAssert seqi >= 0
-        seqval = ord(rec.sequence[seqi])
+        seqval = ord(packedSeq[seqi])
         dec seqi
 
       doAssert seqval >= 0 and seqval < p.dnaFromIndexTable.len
-      outSeq[i] = char(p.dnaFromIndexTable[seqval])
-      outQua[i] = char(uint8(int(p.qualityOffset) + qval))
-
-  rec.sequence = outSeq
-  rec.quality = outQua
+      rec.sequence[i] = char(p.dnaFromIndexTable[seqval])
+      rec.quality[i] = char(uint8(int(p.qualityOffset) + qval))
 
   if p.colorSpace and rec.sequence.len > 0 and rec.quality.len > 0:
     var seq0 = uint8(ord(rec.sequence[0]))
@@ -299,15 +305,15 @@ proc processForward*(
 ): FastqChecksum =
   result.clear()
   if flags == ChecksumCalcNone:
-    for i in 0 ..< records.len:
-      p.processForwardRecord(records[i])
+    for rec in mitems(records):
+      p.processForwardRecord(rec)
     return result
 
   p.fastqHasher.reset()
   p.fastqHasher.setFlags(flags)
-  for i in 0 ..< records.len:
-    p.fastqHasher.update(records[i])
-    p.processForwardRecord(records[i])
+  for rec in mitems(records):
+    p.fastqHasher.update(rec)
+    p.processForwardRecord(rec)
   result = p.fastqHasher.checksum()
 
 proc processBackward*(
@@ -317,15 +323,15 @@ proc processBackward*(
 ): FastqChecksum =
   result.clear()
   if flags == ChecksumCalcNone:
-    for i in 0 ..< records.len:
-      p.processBackwardRecord(records[i])
+    for rec in mitems(records):
+      p.processBackwardRecord(rec)
     return result
 
   p.fastqHasher.reset()
   p.fastqHasher.setFlags(flags)
-  for i in 0 ..< records.len:
-    p.processBackwardRecord(records[i])
-    p.fastqHasher.update(records[i])
+  for rec in mitems(records):
+    p.processBackwardRecord(rec)
+    p.fastqHasher.update(rec)
   result = p.fastqHasher.checksum()
 
 proc initLossyRecordsProcessor*(
@@ -369,12 +375,12 @@ proc processForwardRecord(p: var LossyRecordsProcessor; rec: var PureFastqRecord
   if p.base.colorSpace:
     p.base.processFromColorSpace(rec)
 
-  var seqOut = newStringOfCap(rec.sequence.len)
-  var qualOut = newString(rec.quality.len)
+  let qLen = rec.quality.len
+  var seqWrite = 0
   var prevQSymbol = 255
   var curQThLen = 0'u32
 
-  for i in 0 ..< rec.sequence.len:
+  for i in 0 ..< qLen:
     let seqOrd = ord(rec.sequence[i])
     doAssert seqOrd >= 0 and seqOrd < p.base.dnaToIndexTable.len
     let seqVal = p.base.dnaToIndexTable[seqOrd]
@@ -391,10 +397,11 @@ proc processForwardRecord(p: var LossyRecordsProcessor; rec: var PureFastqRecord
     else:
       if qval == 0:
         qval = 1
-      seqOut.add(char(seqVal))
+      rec.sequence[seqWrite] = char(seqVal)
+      inc seqWrite
       p.base.dnaStats.symbolFreqs[int(seqVal)] += 1'u32
 
-    qualOut[i] = char(uint8(qval))
+    rec.quality[i] = char(uint8(qval))
     p.base.qualityStats.symbolFreqs[qval] += 1'u32
 
     if qval != prevQSymbol:
@@ -403,25 +410,30 @@ proc processForwardRecord(p: var LossyRecordsProcessor; rec: var PureFastqRecord
       curQThLen = uint32(i)
     prevQSymbol = qval
 
-  rec.sequence = seqOut
-  rec.quality = qualOut
-  rec.truncatedLen = uint16(curQThLen + (if rec.quality.len > 0: 1'u32 else: 0'u32))
+  rec.sequence.setLen(seqWrite)
+  rec.truncatedLen = uint16(curQThLen + (if qLen > 0: 1'u32 else: 0'u32))
 
   if prevQSymbol == int(HashSymbolNormal) and p.base.qualityStats.rleLength > 0'u32:
     p.base.qualityStats.rleLength -= 1'u32
 
-  p.base.qualityStats.rawLength += uint32(rec.quality.len)
+  p.base.qualityStats.rawLength += uint32(qLen)
   p.base.qualityStats.thLength += curQThLen
-  if uint32(rec.quality.len) < p.base.qualityStats.minLength:
-    p.base.qualityStats.minLength = uint32(rec.quality.len)
-  if uint32(rec.quality.len) > p.base.qualityStats.maxLength:
-    p.base.qualityStats.maxLength = uint32(rec.quality.len)
+  if uint32(qLen) < p.base.qualityStats.minLength:
+    p.base.qualityStats.minLength = uint32(qLen)
+  if uint32(qLen) > p.base.qualityStats.maxLength:
+    p.base.qualityStats.maxLength = uint32(qLen)
 
 proc processBackwardRecord(p: var LossyRecordsProcessor; rec: var PureFastqRecord) =
   let qLen = rec.quality.len
-  var outSeq = newString(qLen)
-  var outQua = newString(qLen)
-  var seqi = rec.sequence.len - 1
+  var needsSeqCopy = false
+  for i in 0 ..< qLen:
+    if ord(rec.quality[i]) == 0:
+      needsSeqCopy = true
+      break
+
+  var packedSeq = if needsSeqCopy: cloneString(rec.sequence) else: rec.sequence
+  var seqi = packedSeq.len - 1
+  rec.sequence.setLen(qLen)
 
   if qLen > 0:
     for i in countdown(qLen - 1, 0):
@@ -433,15 +445,12 @@ proc processBackwardRecord(p: var LossyRecordsProcessor; rec: var PureFastqRecor
         seqval = 4
       else:
         doAssert seqi >= 0
-        seqval = ord(rec.sequence[seqi])
+        seqval = ord(packedSeq[seqi])
         dec seqi
 
       doAssert seqval >= 0 and seqval < p.base.dnaFromIndexTable.len
-      outSeq[i] = char(p.base.dnaFromIndexTable[seqval])
-      outQua[i] = char(uint8(int(p.base.qualityOffset) + int(p.qualityFromIndexTable[qval])))
-
-  rec.sequence = outSeq
-  rec.quality = outQua
+      rec.sequence[i] = char(p.base.dnaFromIndexTable[seqval])
+      rec.quality[i] = char(uint8(int(p.base.qualityOffset) + int(p.qualityFromIndexTable[qval])))
 
   if p.base.colorSpace and rec.sequence.len > 0 and rec.quality.len > 0:
     var seq0 = uint8(ord(rec.sequence[0]))
@@ -463,15 +472,15 @@ proc processForward*(
 ): FastqChecksum =
   result.clear()
   if flags == ChecksumCalcNone:
-    for i in 0 ..< records.len:
-      p.processForwardRecord(records[i])
+    for rec in mitems(records):
+      p.processForwardRecord(rec)
     return result
 
   p.base.fastqHasher.reset()
   p.base.fastqHasher.setFlags(flags)
-  for i in 0 ..< records.len:
-    p.base.fastqHasher.update(records[i])
-    p.processForwardRecord(records[i])
+  for rec in mitems(records):
+    p.base.fastqHasher.update(rec)
+    p.processForwardRecord(rec)
   result = p.base.fastqHasher.checksum()
 
 proc processBackward*(
@@ -481,13 +490,13 @@ proc processBackward*(
 ): FastqChecksum =
   result.clear()
   if flags == ChecksumCalcNone:
-    for i in 0 ..< records.len:
-      p.processBackwardRecord(records[i])
+    for rec in mitems(records):
+      p.processBackwardRecord(rec)
     return result
 
   p.base.fastqHasher.reset()
   p.base.fastqHasher.setFlags(flags)
-  for i in 0 ..< records.len:
-    p.processBackwardRecord(records[i])
-    p.base.fastqHasher.update(records[i])
+  for rec in mitems(records):
+    p.processBackwardRecord(rec)
+    p.base.fastqHasher.update(rec)
   result = p.base.fastqHasher.checksum()
