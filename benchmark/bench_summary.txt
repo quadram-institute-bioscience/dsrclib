@@ -3,24 +3,24 @@
 ============================================================
 
   Compression, single thread
-    dsrc (C++):  666.5 ms  ± 1.8 ms
-    Nim wrapper: 895.1 ms  ± 6.1 ms
-    → Nim is 1.34x slower (+34% overhead)
+    dsrc (C++):  679.9 ms  ± 7.7 ms
+    Nim wrapper: 900.1 ms  ± 3.8 ms
+    → Nim is 1.32x slower (+32% overhead)
 
   Compression, 4 threads
-    dsrc (C++):  310.2 ms  ± 2.0 ms
-    Nim wrapper: 406.6 ms  ± 3.8 ms
-    → Nim is 1.31x slower (+31% overhead)
+    dsrc (C++):  312.9 ms  ± 2.4 ms
+    Nim wrapper: 396.2 ms  ± 3.9 ms
+    → Nim is 1.27x slower (+27% overhead)
 
   Decompression, single thread
-    dsrc (C++):  492.6 ms  ± 3.7 ms
-    Nim wrapper: 772.6 ms  ± 3.2 ms
-    → Nim is 1.57x slower (+57% overhead)
+    dsrc (C++):  495.8 ms  ± 2.5 ms
+    Nim wrapper: 790.7 ms  ± 2.1 ms
+    → Nim is 1.59x slower (+59% overhead)
 
   Decompression, 4 threads
-    dsrc (C++):  187.6 ms  ± 7.2 ms
-    Nim wrapper: 386.2 ms  ± 3.0 ms
-    → Nim is 2.06x slower (+106% overhead)
+    dsrc (C++):  188.1 ms  ± 3.5 ms
+    Nim wrapper: 395.2 ms  ± 2.1 ms
+    → Nim is 2.10x slower (+110% overhead)
 
 ------------------------------------------------------------
   Overall verdict

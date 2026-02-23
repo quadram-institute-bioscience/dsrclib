@@ -1,4 +1,4 @@
 | Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
 |:---|---:|---:|---:|---:|
-| `dsrc c -t1 /tmp/tmp.8cVsrlgK5L/test.fastq /tmp/tmp.8cVsrlgK5L/test.dsrc1` | 666.5 ± 1.8 | 664.2 | 669.5 | 1.00 |
-| `bin/fastq2dsrc -t 1 /tmp/tmp.8cVsrlgK5L/test.fastq /tmp/tmp.8cVsrlgK5L/test.dsrc2` | 895.1 ± 6.1 | 888.0 | 909.7 | 1.34 ± 0.01 |
+| `dsrc c -t1 /tmp/tmp.1xKr5YcZbR/test.fastq /tmp/tmp.1xKr5YcZbR/test.dsrc1` | 679.9 ± 7.7 | 669.8 | 694.5 | 1.00 |
+| `bin/fastq2dsrc -t 1 /tmp/tmp.1xKr5YcZbR/test.fastq /tmp/tmp.1xKr5YcZbR/test.dsrc2` | 900.1 ± 3.8 | 896.4 | 908.4 | 1.32 ± 0.02 |
