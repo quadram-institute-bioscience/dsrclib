@@ -410,6 +410,43 @@ proc decodeNextTitle(d: var TagTokenizerDecoder; reader: var BitMemoryReader): s
   inc d.recordCounter
   result = titleBuf
 
+proc canUseSingleVarTextFastPath(d: TagTokenizerDecoder): bool =
+  if d.fields.len != 1:
+    return false
+  let field = d.fields[0]
+  if field.isConstant or field.isNumeric:
+    return false
+  if field.len != 0'u32:
+    return false
+  if field.hamMask.len != 0:
+    return false
+  let maxJ = int(min(field.maxLen, uint32(MaxFieldStatLen)))
+  for j in 0 ..< maxJ:
+    if not field.localTreePresent[j]:
+      return false
+  if field.maxLen >= uint32(MaxFieldStatLen) and not field.localTreePresent[MaxFieldStatLen]:
+    return false
+  true
+
+proc decodeNextTitleSingleVarText(d: var TagTokenizerDecoder; reader: var BitMemoryReader): string =
+  let field = addr d.fields[0]
+  var fieldLen = 0'u32
+  if not field[].isLenConstant:
+    fieldLen = if field[].bitsPerLen > 0'u32:
+        reader.getBits(field[].bitsPerLen) + field[].minLen
+      else:
+        field[].minLen
+  else:
+    fieldLen = field[].len
+  doAssert fieldLen <= field[].maxLen
+
+  let n = int(fieldLen)
+  result = newString(n)
+  for k in 0 ..< n:
+    let idx = min(k, MaxFieldStatLen)
+    result[k] = char(field[].localTrees[idx].decodeSymbol(reader))
+  inc d.recordCounter
+
 proc finishDecoding(d: var TagTokenizerDecoder; reader: var BitMemoryReader) =
   discard d
   reader.flushInputWordBuffer()
@@ -425,27 +462,33 @@ proc decodeTagAndLengthsHook*(
   if useRaw:
     var dec = TagRawDecoder()
     dec.startDecoding(reader)
-    for i in 0 ..< state.records.len:
-      state.records[i].title = dec.decodeNextTitle(reader)
+    for rec in mitems(state.records):
+      rec.title = dec.decodeNextTitle(reader)
 
       let qLen = if isVariableLen:
           reader.getBits(lenBits) + state.header.minQuaLength
         else:
           state.header.maxQuaLength
-      state.records[i].quality = newString(int(qLen))
-      state.records[i].sequence = newString(int(qLen))
+      let qLenInt = int(qLen)
+      rec.quality = newString(qLenInt)
+      rec.sequence = newString(qLenInt)
     dec.finishDecoding(reader)
     return
 
   var dec = TagTokenizerDecoder()
   dec.startDecoding(reader)
-  for i in 0 ..< state.records.len:
-    state.records[i].title = dec.decodeNextTitle(reader)
+  let fastOneField = dec.canUseSingleVarTextFastPath()
+  for rec in mitems(state.records):
+    if fastOneField:
+      rec.title = dec.decodeNextTitleSingleVarText(reader)
+    else:
+      rec.title = dec.decodeNextTitle(reader)
 
     let qLen = if isVariableLen:
         reader.getBits(lenBits) + state.header.minQuaLength
       else:
         state.header.maxQuaLength
-    state.records[i].quality = newString(int(qLen))
-    state.records[i].sequence = newString(int(qLen))
+    let qLenInt = int(qLen)
+    rec.quality = newString(qLenInt)
+    rec.sequence = newString(qLenInt)
   dec.finishDecoding(reader)

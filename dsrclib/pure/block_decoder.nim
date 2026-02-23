@@ -1,6 +1,6 @@
 ## End-to-end block decode pipeline for pure-Nim DSRC decompression (PN-010 decode path).
 
-import types, container, chunk_decoder, tag_decoder, quality_decoder, dna_decoder, records_processor
+import types, container, chunk_decoder, tag_decoder, quality_decoder, dna_decoder, records_processor, phase_profile
 
 proc verifyChecksum(
   expected, actual: FastqChecksum;
@@ -12,22 +12,6 @@ proc verifyChecksum(
     raise newException(DsrcFormatError, "Sequence checksum mismatch")
   if (flags and ChecksumCalcQuality) != 0'u32 and expected.quality != actual.quality:
     raise newException(DsrcFormatError, "Quality checksum mismatch")
-
-proc applyPlusLine(rec: var PureFastqRecord; plusRepetition: bool) =
-  if plusRepetition:
-    if rec.title.len == 0:
-      rec.plus = "+"
-      return
-
-    let hasAt = rec.title[0] == '@'
-    let srcStart = if hasAt: min(1, rec.title.len) else: 0
-    let payloadLen = rec.title.len - srcStart
-    rec.plus = newString(payloadLen + 1)
-    rec.plus[0] = '+'
-    if payloadLen > 0:
-      copyMem(addr rec.plus[1], unsafeAddr rec.title[srcStart], payloadLen)
-  else:
-    rec.plus = "+"
 
 proc postprocessRecords(state: var ChunkDecodeState; verifyChecksums: bool) =
   if state.compSettings.lossy:
@@ -61,8 +45,22 @@ proc postprocessRecords(state: var ChunkDecodeState; verifyChecksums: bool) =
     if verifyChecksums and state.compSettings.calculateCrc32:
       verifyChecksum(state.header.checksum, checksum, state.header.checksumFlags)
 
-  for rec in mitems(state.records):
-    rec.applyPlusLine(state.datasetType.plusRepetition)
+  if state.datasetType.plusRepetition:
+    for rec in mitems(state.records):
+      if rec.title.len == 0:
+        rec.plus = "+"
+        continue
+
+      let hasAt = rec.title[0] == '@'
+      let srcStart = if hasAt: 1 else: 0
+      let payloadLen = rec.title.len - srcStart
+      rec.plus = newString(payloadLen + 1)
+      rec.plus[0] = '+'
+      if payloadLen > 0:
+        copyMem(addr rec.plus[1], unsafeAddr rec.title[srcStart], payloadLen)
+  else:
+    for rec in mitems(state.records):
+      rec.plus = "+"
 
 proc decodeChunkRecords*(
   chunk: openArray[uint8];
@@ -70,13 +68,34 @@ proc decodeChunkRecords*(
   compSettings: CompressionSettings;
   verifyChecksums = true
 ): seq[PureFastqRecord] {.gcsafe.} =
+  let profile = phaseProfileEnabled()
+  var tAll: PhaseStamp
+  var tPost: PhaseStamp
+  if profile:
+    tAll = phaseNow()
+
   var hooks: ChunkDecodeHooks
   hooks.tag = decodeTagAndLengthsHook
   hooks.quality = decodeQualityHook
   hooks.dna = decodeDnaHook
 
   var state = decodeChunkWithHooks(chunk, datasetType, compSettings, hooks)
+  if profile:
+    tPost = phaseNow()
   state.postprocessRecords(verifyChecksums = verifyChecksums)
+  if profile:
+    let postMs = phaseElapsedMs(tPost)
+    let totalMs = phaseElapsedMs(tAll)
+    stderr.writeLine(
+      "[phase][decode] rec=" & $state.records.len &
+      " raw=" & $state.header.chunkSize &
+      " meta_ms=" & fmtMs(state.phaseTimings.metaMs) &
+      " tag_ms=" & fmtMs(state.phaseTimings.tagMs) &
+      " qual_ms=" & fmtMs(state.phaseTimings.qualityMs) &
+      " dna_ms=" & fmtMs(state.phaseTimings.dnaMs) &
+      " post_ms=" & fmtMs(postMs) &
+      " total_ms=" & fmtMs(totalMs)
+    )
   state.records
 
 iterator readDsrcPure*(

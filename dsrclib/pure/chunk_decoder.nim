@@ -2,7 +2,7 @@
 ## This mirrors BlockCompressor::ReadMetaData and provides extension points for
 ## Tag/DNA/Quality decoders.
 
-import types, bitstream
+import types, bitstream, phase_profile
 
 const
   FlagDeltaConstant* = 1'u32 shl 0
@@ -10,6 +10,12 @@ const
   FlagMixedFieldFormatting* = 1'u32 shl 2
 
 type
+  ChunkPhaseTimings* = object
+    metaMs*: float64
+    tagMs*: float64
+    qualityMs*: float64
+    dnaMs*: float64
+
   ChunkHeaderMeta* = object
     recordsCount*: uint32
     chunkSize*: uint32
@@ -31,6 +37,7 @@ type
     tagDecoded*: bool
     qualityDecoded*: bool
     dnaDecoded*: bool
+    phaseTimings*: ChunkPhaseTimings
 
   TagDecodeHook* = proc(reader: var BitMemoryReader; state: var ChunkDecodeState) {.gcsafe.}
   QualityDecodeHook* = proc(reader: var BitMemoryReader; state: var ChunkDecodeState) {.gcsafe.}
@@ -136,24 +143,40 @@ proc decodeChunkWithHooks*(
   compSettings: CompressionSettings;
   hooks: ChunkDecodeHooks
 ): ChunkDecodeState {.gcsafe.} =
+  let profile = phaseProfileEnabled()
   var reader = initBitMemoryReader(chunk)
+  var tPhase: PhaseStamp
+  if profile:
+    tPhase = phaseNow()
   result.header = parseChunkHeaderMeta(reader, datasetType, compSettings)
   result.datasetType = datasetType
   result.compSettings = compSettings
   result.records = newSeq[PureFastqRecord](int(result.header.recordsCount))
+  if profile:
+    result.phaseTimings.metaMs = phaseElapsedMs(tPhase)
 
+  if profile:
+    tPhase = phaseNow()
   if result.header.controlChecks:
     readControlCheck(reader)
   if hooks.tag != nil:
     hooks.tag(reader, result)
     result.tagDecoded = true
+  if profile:
+    result.phaseTimings.tagMs = phaseElapsedMs(tPhase)
 
+  if profile:
+    tPhase = phaseNow()
   if result.header.controlChecks:
     readControlCheck(reader)
   if hooks.quality != nil:
     hooks.quality(reader, result)
     result.qualityDecoded = true
+  if profile:
+    result.phaseTimings.qualityMs = phaseElapsedMs(tPhase)
 
+  if profile:
+    tPhase = phaseNow()
   if result.header.controlChecks:
     readControlCheck(reader)
   if hooks.dna != nil:
@@ -162,3 +185,5 @@ proc decodeChunkWithHooks*(
 
   if result.header.controlChecks:
     readControlCheck(reader)
+  if profile:
+    result.phaseTimings.dnaMs = phaseElapsedMs(tPhase)

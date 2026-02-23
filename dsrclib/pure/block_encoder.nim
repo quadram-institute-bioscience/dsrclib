@@ -4,7 +4,7 @@
 ## - non-default tag preserve flags are intentionally unsupported
 ## - supports lossless/lossy, order-0/order-N DNA, quality normal/order modelers
 
-import types, bitstream, chunk_decoder, records_processor, huffman_encoder, range_decoder, adaptive_model_map
+import types, bitstream, chunk_decoder, records_processor, huffman_encoder, range_decoder, adaptive_model_map, phase_profile
 
 const
   TagRawMaxSymbolCount = 128
@@ -840,12 +840,24 @@ proc encodeChunkRecordsInPlace*(
 
   # Chunk size must reflect original FASTQ payload, before forward transforms.
   let originalChunkSize = computeChunkSize(records, datasetType.plusRepetition)
+  let profile = phaseProfileEnabled()
+  var tAll: PhaseStamp
+  var tPhase: PhaseStamp
+  var msForward = 0.0
+  var msMeta = 0.0
+  var msTag = 0.0
+  var msQuality = 0.0
+  var msDna = 0.0
+  if profile:
+    tAll = phaseNow()
 
   var checksum = FastqChecksum()
   var dnaStats = DnaStats()
   var qualityStats = QualityStats()
 
   let cFlags = checksumFlags(compSettings)
+  if profile:
+    tPhase = phaseNow()
   if compSettings.lossy:
     var rp = initLossyRecordsProcessor(
       qualityOffset = datasetType.qualityOffset,
@@ -866,6 +878,8 @@ proc encodeChunkRecordsInPlace*(
     rp.finalizeStats()
     dnaStats = rp.dnaStats
     qualityStats = rp.qualityStats
+  if profile:
+    msForward = phaseElapsedMs(tPhase)
 
   var header = ChunkHeaderMeta()
   header.recordsCount = uint32(records.len)
@@ -884,18 +898,42 @@ proc encodeChunkRecordsInPlace*(
 
   var writer = initBitMemoryWriter()
   let controlChecks = compSettings.debugControlChecks
+  if profile:
+    tPhase = phaseNow()
   writeControlCheck(writer, controlChecks)
   writeMetaData(writer, header, datasetType, compSettings)
   writeControlCheck(writer, controlChecks)
+  if profile:
+    msMeta = phaseElapsedMs(tPhase)
+    tPhase = phaseNow()
   if useRawTags:
     encodeTagRawAndLengths(writer, records, header.minQuaLength, header.maxQuaLength)
   else:
     encodeTagTokenizerAndLengths(writer, records, header.minQuaLength, header.maxQuaLength)
+  if profile:
+    msTag = phaseElapsedMs(tPhase)
+    tPhase = phaseNow()
   writeControlCheck(writer, controlChecks)
   encodeQuality(writer, records, qualityStats, header.minQuaLength, header.maxQuaLength, compSettings)
+  if profile:
+    msQuality = phaseElapsedMs(tPhase)
+    tPhase = phaseNow()
   writeControlCheck(writer, controlChecks)
   encodeDna(writer, records, dnaStats, compSettings)
   writeControlCheck(writer, controlChecks)
+  if profile:
+    msDna = phaseElapsedMs(tPhase)
+    let totalMs = phaseElapsedMs(tAll)
+    stderr.writeLine(
+      "[phase][encode] rec=" & $records.len &
+      " raw=" & $originalChunkSize &
+      " forward_ms=" & fmtMs(msForward) &
+      " meta_ms=" & fmtMs(msMeta) &
+      " tag_ms=" & fmtMs(msTag) &
+      " qual_ms=" & fmtMs(msQuality) &
+      " dna_ms=" & fmtMs(msDna) &
+      " total_ms=" & fmtMs(totalMs)
+    )
   writer.data
 
 proc encodeChunkRecords*(

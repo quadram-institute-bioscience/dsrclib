@@ -16,7 +16,7 @@ TEST_SOURCES = $(sort $(wildcard tests/test_*.nim))
 INPUT_GZ =  tests/data/large.fastq.gz
 BENCHDIR = benchmark
 
-.PHONY: all clean bench test
+.PHONY: all clean bench benchpure test testpure
 
 all: $(TARGETS)
 
@@ -81,6 +81,51 @@ bench: $(TARGETS)
 	@echo "=== Analysing results ==="
 	python3 $(BENCHDIR)/bench_summary.py
 
+benchpure: $(TARGETS)
+	@mkdir -p $(BENCHDIR)
+	$(eval TMPDIR := $(shell mktemp -d))
+	@echo "=== Decompressing $(INPUT_GZ) to $(TMPDIR)/test.fastq ==="
+	gunzip -c $(INPUT_GZ) > $(TMPDIR)/test.fastq
+	@echo ""
+	@echo "=== Pure-only Compression: single thread ==="
+	hyperfine \
+		"$(BINDIR)/fastq2dsrc -t 1 $(TMPDIR)/test.fastq $(TMPDIR)/test.pure.st.dsrc" \
+		--prepare "rm -f $(TMPDIR)/test.pure.st.dsrc" \
+		--warmup 1 \
+		--export-csv $(BENCHDIR)/pure_compression_single.csv \
+		--export-markdown $(BENCHDIR)/pure_compression_single.md
+	@echo ""
+	@echo "=== Pure-only Compression: threaded (4 threads) ==="
+	hyperfine \
+		"$(BINDIR)/fastq2dsrc -t 4 $(TMPDIR)/test.fastq $(TMPDIR)/test.pure.mt.dsrc" \
+		--prepare "rm -f $(TMPDIR)/test.pure.mt.dsrc" \
+		--warmup 1 \
+		--export-csv $(BENCHDIR)/pure_compression_threaded.csv \
+		--export-markdown $(BENCHDIR)/pure_compression_threaded.md
+	@echo ""
+	@echo "--- Preparing pure DSRC file for decompression benchmarks ---"
+	$(BINDIR)/fastq2dsrc -t 1 $(TMPDIR)/test.fastq $(TMPDIR)/test.pure.dsrc
+	@echo ""
+	@echo "=== Pure-only Decompression: single thread ==="
+	hyperfine \
+		"$(BINDIR)/undsrc -t 1 $(TMPDIR)/test.pure.dsrc $(TMPDIR)/out.pure.st.fastq" \
+		--prepare "rm -f $(TMPDIR)/out.pure.st.fastq" \
+		--warmup 1 \
+		--export-csv $(BENCHDIR)/pure_decompression_single.csv \
+		--export-markdown $(BENCHDIR)/pure_decompression_single.md
+	@echo ""
+	@echo "=== Pure-only Decompression: threaded (4 threads) ==="
+	hyperfine \
+		"$(BINDIR)/undsrc -t 4 $(TMPDIR)/test.pure.dsrc $(TMPDIR)/out.pure.mt.fastq" \
+		--prepare "rm -f $(TMPDIR)/out.pure.mt.fastq" \
+		--warmup 1 \
+		--export-csv $(BENCHDIR)/pure_decompression_threaded.csv \
+		--export-markdown $(BENCHDIR)/pure_decompression_threaded.md
+	@echo ""
+	@echo "=== Cleaning up temp dir ==="
+	rm -rf $(TMPDIR)
+	@echo "Pure benchmark results saved to $(BENCHDIR)/"
+
 test:
 	@echo "=== Core test suite (default mm) ==="
 	@for t in $(TEST_SOURCES); do \
@@ -131,6 +176,36 @@ test:
 	@echo ""
 	@echo "=== Legacy backend opt-in build check ==="
 	$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/legacy-check -d:dsrclibLegacy -r tests/test_basic.nim
+
+testpure:
+	@echo "=== Pure-only test suite (default mm) ==="
+	@for t in $(TEST_SOURCES); do \
+		if [ "$$t" = "tests/test_oracle_harness.nim" ]; then \
+			echo ">>> $$t (oracle CLI disabled)"; \
+			DSRCLIB_DSRC_CMD=__skip_dsrc__ \
+			$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/pure-default --threads:on -r $$t; \
+		else \
+			echo ">>> $$t"; \
+			$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/pure-default -r $$t; \
+		fi; \
+	done
+	@echo ""
+	@echo "=== Pure-only test suite (ARC mm) ==="
+	@for t in $(TEST_SOURCES); do \
+		if [ "$$t" = "tests/test_oracle_harness.nim" ]; then \
+			echo ">>> $$t (oracle CLI disabled)"; \
+			DSRCLIB_DSRC_CMD=__skip_dsrc__ \
+			$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/pure-arc --mm:arc --threads:on -r $$t; \
+		else \
+			echo ">>> $$t"; \
+			$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/pure-arc --mm:arc -r $$t; \
+		fi; \
+	done
+	@echo ""
+	@echo "=== Example build + smoke test (pure-only) ==="
+	$(NIM) cpp --path:. --nimcache:$(TEST_NIMCACHE)/pure-example -o:example/undsrc_pure example/undsrc.nim
+	./example/undsrc_pure tests/data/test.fastq.dsrc > /tmp/out_pure.fq
+	test $$(wc -l < /tmp/out_pure.fq) -eq 16
 
 clean:
 	rm -rf $(BINDIR)

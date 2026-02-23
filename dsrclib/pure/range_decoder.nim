@@ -19,9 +19,64 @@ type
 
   AdaptiveSymbolCoder* = object
     stats: seq[uint16]
+    fenwick: seq[uint32] # 1-based Binary Indexed Tree over stats
+    topBit: int
     stepSize: uint16
     total: uint32
     maxAccumulatedValue: uint32
+
+proc highestPowerOfTwoLE(x: int): int {.inline.} =
+  doAssert x > 0
+  result = 1
+  while (result shl 1) <= x:
+    result = result shl 1
+
+proc fenwickAdd(coder: var AdaptiveSymbolCoder; idx0: int; delta: uint32) {.inline.} =
+  var i = idx0 + 1
+  while i < coder.fenwick.len:
+    coder.fenwick[i] += delta
+    i += i and -i
+
+proc fenwickPrefixExclusive(coder: AdaptiveSymbolCoder; idxExclusive: int): uint32 {.inline.} =
+  var i = idxExclusive
+  while i > 0:
+    result += coder.fenwick[i]
+    i -= i and -i
+
+proc rebuildFenwick(coder: var AdaptiveSymbolCoder) =
+  let n = coder.stats.len
+  coder.fenwick = newSeq[uint32](n + 1)
+  var total = 0'u32
+  for i in 1 .. n:
+    let v = uint32(coder.stats[i - 1])
+    coder.fenwick[i] = v
+    total += v
+  for i in 1 .. n:
+    let j = i + (i and -i)
+    if j <= n:
+      coder.fenwick[j] += coder.fenwick[i]
+  coder.total = total
+  coder.topBit = highestPowerOfTwoLE(n)
+
+proc fenwickFindByCumulative(
+  coder: AdaptiveSymbolCoder;
+  cumulative: uint32;
+  lowEnd: var uint32
+): int {.inline.} =
+  # Find smallest idx such that prefix(idx+1) > cumulative.
+  var idx = 0
+  var bit = coder.topBit
+  var rem = cumulative + 1'u32
+  lowEnd = 0'u32
+  let n = coder.stats.len
+  while bit != 0:
+    let next = idx + bit
+    if next <= n and coder.fenwick[next] < rem:
+      idx = next
+      lowEnd += coder.fenwick[next]
+      rem -= coder.fenwick[next]
+    bit = bit shr 1
+  idx
 
 proc initAdaptiveSymbolCoder*(
   symbolCount: int;
@@ -31,6 +86,7 @@ proc initAdaptiveSymbolCoder*(
   result.stats = newSeq[uint16](symbolCount)
   for i in 0 ..< symbolCount:
     result.stats[i] = 1'u16
+  result.rebuildFenwick()
   result.stepSize = stepSize
   result.total = uint32(symbolCount)
   result.maxAccumulatedValue = (1'u32 shl 16) - uint32(symbolCount) * uint32(stepSize)
@@ -38,7 +94,7 @@ proc initAdaptiveSymbolCoder*(
 proc clear*(coder: var AdaptiveSymbolCoder) =
   for i in 0 ..< coder.stats.len:
     coder.stats[i] = 1'u16
-  coder.total = uint32(coder.stats.len)
+  coder.rebuildFenwick()
 
 proc symbolCount*(coder: AdaptiveSymbolCoder): int =
   coder.stats.len
@@ -111,12 +167,10 @@ proc finish*(decoder: var RangeDecoder) =
   discard decoder
 
 proc rescale(coder: var AdaptiveSymbolCoder) =
-  var total = 0'u32
   for i in 0 ..< coder.stats.len:
     let v = coder.stats[i] - (coder.stats[i] shr 1)
     coder.stats[i] = v
-    total += uint32(v)
-  coder.total = total
+  coder.rebuildFenwick()
 
 proc accumulate(coder: var AdaptiveSymbolCoder): uint32 =
   if coder.total >= coder.maxAccumulatedValue:
@@ -130,20 +184,14 @@ proc decodeSymbol*(
 ): uint32 =
   let acc = coder.accumulate()
   let cul = decoder.getCumulativeFreq(acc)
-
-  var idx = 0
-  var hiEnd = 0'u32
-  while idx < coder.stats.len:
-    hiEnd += uint32(coder.stats[idx])
-    if hiEnd > cul:
-      break
-    inc idx
-
+  var lowEnd = 0'u32
+  let idx = coder.fenwickFindByCumulative(cul, lowEnd)
   doAssert idx < coder.stats.len
-  let lowEnd = hiEnd - uint32(coder.stats[idx])
   decoder.updateFrequency(reader, uint32(coder.stats[idx]), lowEnd)
   coder.stats[idx] = coder.stats[idx] + coder.stepSize
-  coder.total += uint32(coder.stepSize)
+  let delta = uint32(coder.stepSize)
+  coder.fenwickAdd(idx, delta)
+  coder.total += delta
   uint32(idx)
 
 proc encodeSymbol*(
@@ -154,11 +202,10 @@ proc encodeSymbol*(
 ) =
   doAssert sym < uint32(coder.stats.len)
   let acc = coder.accumulate()
-
-  var lowEnd = 0'u32
-  for i in 0 ..< int(sym):
-    lowEnd += uint32(coder.stats[i])
-
-  encoder.encodeFrequency(writer, uint32(coder.stats[sym]), lowEnd, acc)
-  coder.stats[sym.int] = coder.stats[sym.int] + coder.stepSize
-  coder.total += uint32(coder.stepSize)
+  let symIdx = sym.int
+  let lowEnd = coder.fenwickPrefixExclusive(symIdx)
+  encoder.encodeFrequency(writer, uint32(coder.stats[symIdx]), lowEnd, acc)
+  coder.stats[symIdx] = coder.stats[symIdx] + coder.stepSize
+  let delta = uint32(coder.stepSize)
+  coder.fenwickAdd(symIdx, delta)
+  coder.total += delta
